@@ -12,6 +12,11 @@
 실행 (프로젝트 루트에서):
   caffeinate -dims /usr/local/bin/python3.10 src/data/collect_matches.py --max 3000 --days 14
   (--timeline 을 붙이면 아이템 구매 순서용 타임라인도 받음: 요청 수 2배)
+  (--no-raw: 원본 매치 JSON 저장 안 함, 요약 participants.jsonl만 -> 용량 대폭 절약)
+  (--seed-start N: 시드 플레이어 N번째부터 시작)
+이어받기 기준은 participants.jsonl의 매치 ID다. 다른 컴퓨터에서 이어서 받으려면
+participants.jsonl 하나만 같은 경로(data/raw/riot/)에 복사해 두고 실행하면 된다.
+※ 같은 API 키로 두 컴퓨터에서 동시에 돌리면 요청 제한(429)에 걸리니 한 곳에서만 실행할 것
 """
 import argparse
 import json
@@ -129,12 +134,19 @@ def main():
     ap.add_argument("--max", type=int, default=3000, help="이번 실행에서 받을 최대 매치 수")
     ap.add_argument("--days", type=int, default=14, help="최근 며칠 매치만")
     ap.add_argument("--timeline", action="store_true", help="타임라인(구매 순서)도 받기")
+    ap.add_argument("--no-raw", action="store_true", help="원본 매치 JSON 저장 안 함 (요약만)")
+    ap.add_argument("--seed-start", type=int, default=0, help="시드 플레이어 시작 번호")
     a = ap.parse_args()
 
     S.headers["X-Riot-Token"] = load_key()
     MATCH_DIR.mkdir(parents=True, exist_ok=True)
     TL_DIR.mkdir(parents=True, exist_ok=True)
     have = {f.stem for f in MATCH_DIR.glob("*.json")}
+    if SUMMARY.exists():                                   # 요약 파일 기준으로 이어받기 (다른 컴퓨터와 공유 가능)
+        with SUMMARY.open(encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    have.add(json.loads(line)["match_id"])
     print(f"기존 매치 {len(have)}개 | 시드 수집 중...")
     puuids = seed_puuids()
     print(f"시드 플레이어 {len(puuids)}명")
@@ -143,6 +155,8 @@ def main():
     new, t0 = 0, time.time()
     with SUMMARY.open("a", encoding="utf-8") as fs:
         for k, pu in enumerate(puuids):
+            if k < a.seed_start:
+                continue
             ids = get(f"{REGION}/lol/match/v5/matches/by-puuid/{pu}/ids",
                       queue=QUEUE, type="ranked", startTime=start_time, count=20) or []
             for mid in ids:
@@ -155,7 +169,8 @@ def main():
                     for key in DROP:
                         p.pop(key, None)
                 m["metadata"].pop("participants", None)              # puuid 목록 제거
-                (MATCH_DIR / f"{mid}.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
+                if not a.no_raw:
+                    (MATCH_DIR / f"{mid}.json").write_text(json.dumps(m, ensure_ascii=False), encoding="utf-8")
                 for row in summarize(m):
                     fs.write(json.dumps(row, ensure_ascii=False) + "\n")
                 fs.flush()
