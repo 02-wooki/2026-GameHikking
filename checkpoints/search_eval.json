@@ -1,0 +1,307 @@
+[
+  {
+    "q": "아트록스 26.19 패치 W 재사용 대기시간 어떻게 바뀌었어?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "벨베스 26-16 궁극기 본모습 총공격 속도 변경",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치",
+      "필드"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "니코 26.20 E 강화 속박 지속시간",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "마스터이 26.18 궁 이동 속도 바뀜?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "챔피언",
+      "패치"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "럼블 26-19 패시브 과열 상태 공격 속도",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "드레이븐 26.19 기본 공격력 상향됐어?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "다이애나 26-20 W 보호막 추가 체력 계수",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "신드라 26-18 패시브 분노의 조각 마나",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "잭스 13.1 패치 Q 물리 피해량",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치",
+      "필드"
+    ],
+    "in_v1": false
+  },
+  {
+    "q": "흐웨이 14.1 패치 기본 방어력",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치",
+      "필드"
+    ],
+    "in_v1": false
+  },
+  {
+    "q": "나서스 26-19 패치에서 뭐 바뀌었어?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "카시오페아 26.18 패치 변경점",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "베인 최근 패치 변경사항 알려줘",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "패치"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "뽀삐 너프 내용",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "챔피언",
+      "패치"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "잭스 13.1 패치 왜 바뀐 거야?",
+    "kind": "context",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치"
+    ],
+    "in_v1": false
+  },
+  {
+    "q": "아리 궁극기 뭐야?",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "나서스 Q 스킬 알려줘",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "요네 W 뭐야",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "아펠리오스 E 설명해줘",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "레나타 R 뭐야?",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "럭스 궁 알려줘",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "아트록스 패시브",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "아트록스 기본 체력 얼마야?",
+    "kind": "stats",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "나서스 공격력 몇이야",
+    "kind": "stats",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "탱커 챔피언 추천해줘",
+    "kind": "role",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "역할"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "원딜 챔피언 뭐 있어?",
+    "kind": "role",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "역할"
+    ],
+    "in_v1": true
+  }
+]

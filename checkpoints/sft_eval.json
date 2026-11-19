@@ -1,0 +1,20 @@
+{
+  "val_answer_loss": 5.159644961897199,
+  "exact_match_by_kind": {
+    "base_role": "0/20",
+    "base_skill": "0/200",
+    "base_stat": "0/40",
+    "neg_base": "2/10",
+    "neg_patch": "8/13",
+    "neg_slot": "6/12",
+    "neg_type": "0/14",
+    "patch_all": "0/11",
+    "patch_all_nopatch": "0/11",
+    "patch_field": "0/24",
+    "patch_slot": "0/22"
+  },
+  "exact_match_total": "16/377",
+  "refusal_correct_on_neg": "19/49",
+  "false_refusal_on_pos": "91/328",
+  "numbers_all_in_evidence": "5/84"
+}

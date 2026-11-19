@@ -1,0 +1,74 @@
+[
+  {
+    "q": "삼위일체 가격 얼마야?",
+    "kind": "item",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "아이템"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "몰왕 조합법 알려줘",
+    "kind": "item",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "아이템"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "가시 갑옷 효과",
+    "kind": "item",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [
+      "아이템"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "존야 얼마임",
+    "kind": "item",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [
+      "아이템"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "라바돈의 죽음모자 재료",
+    "kind": "item",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [
+      "아이템"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "무한의 대검 능력치 알려줘",
+    "kind": "item",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "아이템"
+    ],
+    "in_v1": true
+  }
+]

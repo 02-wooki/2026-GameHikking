@@ -1,0 +1,37 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ===== IDE / OS =====
+.idea/
+.vscode/
+.DS_Store
+
+# ===== 비밀 정보 (API 키 등) =====
+.env
+*.key
+
+# ===== 대용량 및 라이선스 유관 파일 =====
+# Vector DB: src/rag 적재 스크립트로 재생성
+chroma_db/
+# 모델 체크포인트: 학습 스크립트로 재생성 (필요하면 Releases에 따로 업로드)
+checkpoints/*.pt
+# 크롤링 원본 HTML 캐시: src/data/crawler_all.py로 재생성
+data/raw/patch_html/
+# Data Dragon 원본 JSON 캐시: src/data/build_champions_json.py로 재생성
+data/raw/ddragon/
+# 원문 재배포 방지
+data/raw/*.txt
+data/processed/
+data/chunks/
+data/sft/
+# 수집된 매치 데이터
+data/raw/riot/
+
+# ===== 기타 =====
+temp/
+*.log

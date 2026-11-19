@@ -1,0 +1,15 @@
+{
+  "val_answer_loss": 4.0451760344983985,
+  "exact_match_total": "38/300",
+  "exact_match_by_kind": {
+    "neg_patch": "13/13",
+    "neg_skill": "20/21",
+    "neg_stat": "5/5",
+    "patch": "0/110",
+    "skill": "0/115",
+    "stat": "0/36"
+  },
+  "refusal_correct_on_neg": "39/39",
+  "false_refusal_on_pos": "257/261",
+  "numbers_all_in_evidence": "0/3"
+}

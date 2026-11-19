@@ -1,0 +1,125 @@
+[
+  {
+    "q": "아트록스 지옥사슬 쿨 줄었어?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "패치",
+      "필드"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "마이 궁 이속 얼마나 올랐음?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "챔피언",
+      "패치"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "13.1 잭스 반격 피해량 어떻게 바뀜",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치"
+    ],
+    "in_v1": false
+  },
+  {
+    "q": "니코 칭칭올가미 바뀐거 있어?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "다이애나 e 공속 26.20",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언",
+      "패치",
+      "필드"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "흐웨이 방어력 버프됨?",
+    "kind": "patch",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "패치"
+    ],
+    "in_v1": false
+  },
+  {
+    "q": "럼블 패시브 설명 좀",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "Aatrox Q 뭐임",
+    "kind": "skill",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "챔피언"
+    ],
+    "in_v1": true
+  },
+  {
+    "q": "아리 체력 몇임",
+    "kind": "stats",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": true,
+    "v1_miss": [],
+    "in_v1": true
+  },
+  {
+    "q": "서포터 챔프 목록",
+    "kind": "role",
+    "v2": true,
+    "v2_miss": [],
+    "v2_top5": true,
+    "v1": false,
+    "v1_miss": [
+      "종류",
+      "역할"
+    ],
+    "in_v1": true
+  }
+]
