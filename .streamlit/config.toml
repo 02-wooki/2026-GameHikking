@@ -1,0 +1,19 @@
+# 라이트/다크 둘 다 정의 → 우상단 ⋮ > Settings에서 System/Light/Dark 전환
+[theme]
+font = "'IBM Plex Sans KR', sans-serif"
+
+[theme.light]
+primaryColor = "#2546D9"
+backgroundColor = "#E9EEF2"
+secondaryBackgroundColor = "#F6F8FA"
+textColor = "#18222F"
+borderColor = "#C9D3DC"
+linkColor = "#2546D9"
+
+[theme.dark]
+primaryColor = "#8EA6FF"
+backgroundColor = "#141B24"
+secondaryBackgroundColor = "#1C2531"
+textColor = "#DCE3EA"
+borderColor = "#2E3A48"
+linkColor = "#8EA6FF"
