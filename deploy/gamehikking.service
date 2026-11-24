@@ -1,0 +1,16 @@
+[Unit]
+Description=GameHikking Streamlit app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sysadmin
+WorkingDirectory=/home/sysadmin/2026-GameHikking
+ExecStart=/home/sysadmin/2026-GameHikking/.venv/bin/streamlit run app.py --server.port 8510 --server.headless true --server.address 127.0.0.1 --browser.gatherUsageStats false
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
