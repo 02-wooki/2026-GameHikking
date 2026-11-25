@@ -2,14 +2,14 @@
 # 실행 (프로젝트 루트에서):
 #   bash deploy/pull_logs.sh                      # 파이 로그를 logs/pi/ 로 받기 (선택)
 #   /usr/local/bin/python3.10 -m streamlit run admin.py --server.port 8520 --server.address 127.0.0.1
-# 로그 원본(queries.jsonl, feedback.jsonl)은 읽기만 한다. 검토 결과(확인함·정답 의도·메모)는
-# logs/review_labels.jsonl 에 따로 덧붙여 쓴다 (같은 id는 마지막 줄이 유효). pull_logs.sh로 로그를 다시 받아도 안 지워짐.
+# 검토 결과(정답 의도·확인함·메모)는 고르는 즉시 그 로그 파일(queries.jsonl)의 해당 줄에 써 넣는다
+#   (intent_gold, reviewed, review_note 칸). 같은 내용을 logs/review_labels.jsonl 에도 덧붙여 두는데,
+#   pull_logs.sh가 logs/pi/queries.jsonl 을 파이 원본으로 통째로 바꿔 놓아도 다음 화면에서 이 기록으로 다시 채우기 위해서다.
 import html
 import json
 import os
 import subprocess
 import sys
-from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -79,13 +79,49 @@ def load_labels():
 
 
 def save_label(log_id, **change):
-    """현재 값에 바뀐 칸만 덮어써서 한 줄 추가 (원본 로그는 건드리지 않음)"""
+    """기록 파일(review_labels.jsonl)에 현재 값 + 바뀐 칸을 한 줄 추가"""
     cur = {k: v for k, v in load_labels().get(log_id, {}).items() if k not in ("id", "ts")}
     cur.update(change)
     LABELS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with LABELS_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"id": log_id, **cur, "ts": datetime.now(QL.KST).isoformat(timespec="seconds")},
                            ensure_ascii=False) + "\n")
+
+
+LOG_FIELDS = {"intent_gold": "intent_gold", "reviewed": "reviewed", "note": "review_note"}   # 기록 칸 -> 로그 칸
+
+
+def apply_labels(log_dir, labels, only=None):
+    """검토 기록을 로그 파일의 해당 줄에 써 넣는다. 이미 같으면 파일을 건드리지 않음. 바뀐 칸 수를 돌려준다.
+    파일 전체를 임시 파일에 쓴 뒤 바꿔치기(os.replace)해서, 쓰는 도중 끊겨도 로그가 반쯤 깨지지 않게 한다.
+    로컬 앱이 같은 파일에 질문을 덧붙이는 중일 수 있어, 읽은 뒤 크기가 바뀌었으면 다시 읽어서 처리한다."""
+    path = log_dir / "queries.jsonl"
+    for _ in range(3):
+        if not path.exists():
+            return 0
+        size = path.stat().st_size
+        out, changed = [], 0
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            x = json.loads(line)
+            lab = labels.get(x.get("id"))
+            if lab and (only is None or x["id"] in only):
+                diff = {f: lab[k] for k, f in LOG_FIELDS.items() if k in lab and x.get(f) != lab[k]}
+                if diff:
+                    x.update(diff)
+                    changed += len(diff)
+                    line = json.dumps(x, ensure_ascii=False)
+            out.append(line)
+        if not changed:
+            return 0
+        if path.stat().st_size != size:
+            continue
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        return changed
+    return 0
 
 
 def reasons_of(x):
@@ -105,9 +141,10 @@ def reasons_of(x):
     return out
 
 
-def on_label(log_id, field, key):
-    v = st.session_state[key]
-    save_label(log_id, **{field: v})
+def on_label(log_id, field, key, log_dir):
+    """고르는 즉시: 기록 파일에 한 줄 + 로그 파일의 그 줄에 반영"""
+    save_label(log_id, **{field: st.session_state[key]})
+    apply_labels(log_dir, load_labels(), only={log_id})
 
 
 def pull_pi_logs():
@@ -166,8 +203,9 @@ if not available:
 if st.session_state.get("src") not in available:
     st.session_state.src = list(available)[0]
 src_name = top[0].segmented_control("로그 위치", list(available), key="src") or list(available)[0]
-rows = load_rows(available[src_name])
-labels = load_labels()
+log_dir = available[src_name]
+apply_labels(log_dir, load_labels())        # 로그를 새로 받아 기록이 빠졌으면 다시 채움 (이미 같으면 그대로)
+rows = load_rows(log_dir)
 
 typed = [x for x in rows if x["source"] == "typed"]
 questions = [x for x in typed if x["label"] == "question"]
@@ -177,8 +215,8 @@ m[0].metric("직접 입력", len(typed), help=f"예시 버튼 {len(rows) - len(t
 m[1].metric("질문", len(questions), help=f"noise {len(typed) - len(questions)}개")
 m[2].metric("검토 필요", len(needs))
 m[3].metric("👍 / 👎", f"{sum(x.get('vote') == 1 for x in typed)} / {sum(x.get('vote') == 0 for x in typed)}")
-m[4].metric("확인함", sum(1 for x in typed if labels.get(x["id"], {}).get("reviewed")))
-m[5].metric("정답 의도 달림", sum(1 for x in typed if labels.get(x["id"], {}).get("intent_gold")))
+m[4].metric("확인함", sum(1 for x in typed if x.get("reviewed")))
+m[5].metric("정답 의도 달림", sum(1 for x in typed if x.get("intent_gold")))
 
 # ---------- 필터 ----------
 picked = st.pills("검토 이유", list(REASONS), format_func=REASONS.get, selection_mode="multi",
@@ -192,9 +230,9 @@ pool = rows if with_examples else typed
 shown = [x for x in pool if set(reasons_of(x)) & set(picked or [])]
 if needle.strip():
     shown = [x for x in shown if needle.strip() in x["query"]]
-if hide_done:
-    shown = [x for x in shown if not labels.get(x["id"], {}).get("reviewed")]
 shown.sort(key=lambda x: x["ts"], reverse=True)
+todo = [x for x in shown if not x.get("reviewed")]
+done = [x for x in shown if x.get("reviewed")]
 
 by_session = {}
 for x in rows:
@@ -202,21 +240,11 @@ for x in rows:
 for xs in by_session.values():
     xs.sort(key=lambda x: x["ts"])
 
-# ---------- 목록 ----------
-pages = max(1, -(-len(shown) // PAGE))
-head = st.columns([4, 1])
-head[0].markdown(f"**{len(shown)}개** · 최근 순" + (f" · {pages}쪽" if pages > 1 else ""))
-page = head[1].number_input("쪽", 1, pages, 1, key="page", label_visibility="collapsed") if pages > 1 else 1
 
-if not shown:
-    st.markdown('<div class="ad-sub">조건에 맞는 질문이 없습니다. 위의 검토 이유를 더 고르거나 "확인한 것 숨기기"를 꺼 보세요.</div>',
-                unsafe_allow_html=True)
-
-for x in shown[(page - 1) * PAGE: page * PAGE]:
+def render_card(x):
     lid = x["id"]
-    lab = labels.get(lid, {})
     tags = "".join(f'<span class="ad-tag {r}">{REASONS[r]}</span>' for r in reasons_of(x))
-    if lab.get("reviewed"):
+    if x.get("reviewed"):
         tags += '<span class="ad-tag done">확인함</span>'
     if x["label"] == "noise":
         tags += f'<span class="ad-tag">{e(str(x.get("noise_type")))}</span>'
@@ -251,24 +279,37 @@ for x in shown[(page - 1) * PAGE: page * PAGE]:
         with c[1]:
             opts = list(INTENTS)
             guess = (x.get("parsed") or {}).get("intent")
-            st.selectbox("정답 의도", opts, index=opts.index(lab["intent_gold"]) if lab.get("intent_gold") in opts else None,
+            st.selectbox("정답 의도", opts, index=opts.index(x["intent_gold"]) if x.get("intent_gold") in opts else None,
                          placeholder="고르기", format_func=lambda k: f"{INTENTS[k]} ({k})",
-                         key=f"gold_{lid}", on_change=on_label, args=(lid, "intent_gold", f"gold_{lid}"),
+                         key=f"gold_{lid}", on_change=on_label, args=(lid, "intent_gold", f"gold_{lid}", log_dir),
                          help=f"규칙 해석: {guess}" if guess else None)
-            st.text_input("메모", value=lab.get("note", ""), key=f"note_{lid}", placeholder="선택",
-                          on_change=on_label, args=(lid, "note", f"note_{lid}"))
-            st.toggle("확인함", value=bool(lab.get("reviewed")), key=f"rev_{lid}",
-                      on_change=on_label, args=(lid, "reviewed", f"rev_{lid}"))
+            st.text_input("메모", value=x.get("review_note") or "", key=f"note_{lid}", placeholder="선택",
+                          on_change=on_label, args=(lid, "note", f"note_{lid}", log_dir))
+            st.toggle("확인함", value=bool(x.get("reviewed")), key=f"rev_{lid}",
+                      on_change=on_label, args=(lid, "reviewed", f"rev_{lid}", log_dir))
 
-# ---------- 내보내기 ----------
-st.divider()
-gold = [{"id": x["id"], "query": x["query"], "intent_gold": labels[x["id"]]["intent_gold"],
-         "rule_intent": (x.get("parsed") or {}).get("intent")}
-        for x in rows if labels.get(x["id"], {}).get("intent_gold")]
-ex = st.columns([3, 1])
-ex[0].markdown(f"정답 의도가 달린 질문 **{len(gold)}개**"
-               + (" · " + ", ".join(f"{INTENTS[k]} {n}" for k, n in Counter(g["intent_gold"] for g in gold).most_common())
-                  if gold else ""))
-ex[1].download_button("실험 10용으로 내보내기", "\n".join(json.dumps(g, ensure_ascii=False) for g in gold),
-                      file_name="intent_gold.jsonl", mime="application/jsonl", disabled=not gold,
-                      icon=":material/download:", width="stretch")
+
+def render_section(items, name, title=None):
+    """카드 목록 + 쪽 나누기. title이 있으면 섹션 제목을 단다 ('확인 안 함' / '확인함')"""
+    pages = max(1, -(-len(items) // PAGE))
+    head = st.columns([4, 1], vertical_alignment="bottom")
+    label = f"{title} · {len(items)}개" if title else f"{len(items)}개"
+    head[0].markdown(f"#### {label}" if title else f"**{label}** · 최근 순"
+                     + (f" · {pages}쪽" if pages > 1 else ""))
+    page = head[1].number_input("쪽", 1, pages, 1, key=f"page_{name}", label_visibility="collapsed") if pages > 1 else 1
+    if not items:
+        st.markdown('<div class="ad-sub">해당하는 질문이 없습니다.</div>', unsafe_allow_html=True)
+    for x in items[(page - 1) * PAGE: page * PAGE]:
+        render_card(x)
+
+
+# ---------- 목록 ----------
+if hide_done:
+    render_section(todo, "todo")
+    if not todo:
+        st.markdown('<div class="ad-sub">위의 검토 이유를 더 고르거나 "확인한 것 숨기기"를 꺼 보세요.</div>',
+                    unsafe_allow_html=True)
+else:
+    render_section(todo, "todo", "확인 안 함")
+    st.divider()
+    render_section(done, "done", "확인함")
