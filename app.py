@@ -52,7 +52,8 @@ div[data-testid="stTextInput"] > div { border-radius: 8px; border-width: 1.5px; 
 /* 답변: 패치노트 원문을 인용 블록처럼 */
 [class*="st-key-answer"] { position: relative; padding: 1.2rem 1.3rem 1.1rem;
   background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
-.gh-head { display: flex; align-items: center; gap: .85rem; }
+.gh-head { display: flex; align-items: center; gap: .85rem; margin-bottom: .75rem; }
+[class*="st-key-scroll_"], [data-testid="stLayoutWrapper"]:has(> [class*="st-key-scroll_"]) { display: none; }   /* 스크롤용 스크립트 자리는 화면에 공간을 차지하지 않게 */
 .gh-head img { width: 52px; height: 52px; border-radius: 8px; border: 1px solid var(--line); }
 .gh-q { font-size: .85rem; color: var(--muted); }
 [class*="st-key-answer"] .stMarkdown p, [class*="st-key-answer"] .stMarkdown li { line-height: 1.8; }
@@ -89,7 +90,9 @@ div[data-testid="stTextInput"] > div { border-radius: 8px; border-width: 1.5px; 
 .gh-hit .t { font-size: .82rem; line-height: 1.6; margin-top: .2rem; color: var(--ink); opacity: .8; }
 .gh-tag { display: inline-block; font-size: .7rem; padding: 0 .4rem; margin-left: .3rem; border: 1px solid var(--line); border-radius: 4px; }
 .gh-empty { margin-top: 2.6rem; color: var(--muted); font-size: .9rem; }
-.gh-side { font-size: .8rem; color: var(--muted); line-height: 1.7; }
+/* 입력창 아래 옵션 줄: 입력창보다 한 단계 작게 */
+.st-key-opts { padding: .35rem .25rem 0; }
+.st-key-opts label p, .st-key-opts .stCaption p { font-size: .8rem; color: var(--muted); }
 
 /* 대화를 시작하면 제목을 작게 */
 .stMarkdown h1.gh-title.compact { font-size: 1.6rem !important; margin-bottom: .6rem; }
@@ -97,19 +100,26 @@ div[data-testid="stTextInput"] > div { border-radius: 8px; border-width: 1.5px; 
 
 /* 채팅: 내 질문은 오른쪽 말풍선, 답변은 아바타 없이 카드만 */
 div[data-testid="stChatMessage"] { background: transparent; padding: .25rem 0; gap: 0; }
-div[data-testid="stChatMessage"]:has(.gh-me) { justify-content: flex-end; }
-div[data-testid="stChatMessage"]:has(.gh-me) > div:first-child,
-div[data-testid="stChatMessage"]:has([class*="st-key-answer"]) > div:first-child { display: none; }
-div[data-testid="stChatMessage"]:has(.gh-me) [data-testid="stChatMessageContent"] { flex: 0 1 auto; margin: 0 0 0 auto; }
+[data-testid^="stChatMessageAvatar"] { display: none; }   /* 사람·로봇 아바타는 쓰지 않는다 */
+/* 답변을 찾는 동안: 로딩 원과 문구 사이를 띄우고, 답변 카드 글자 위치에 맞춘다 */
+div[data-testid="stChatMessage"] [data-testid="stSpinner"] { padding: .9rem 1.3rem; }
+div[data-testid="stChatMessage"] [data-testid="stSpinner"] > div { gap: .75rem; align-items: center; }
+div[data-testid="stChatMessage"] [data-testid="stSpinner"] p { color: var(--muted); font-size: .92rem; }
 .gh-me { background: var(--accent); color: var(--paper); padding: .55rem .95rem; border-radius: 14px 14px 4px 14px;
-  max-width: 34em; line-height: 1.6; margin-left: auto; }
+  width: fit-content; max-width: min(34em, 85%); line-height: 1.6; margin-left: auto; }
 .gh-mode { font-size: .72rem; opacity: .75; margin-top: .15rem; text-align: right; }
 /* 빈 입력창이 웹폰트 로딩 전 높이로 크게 잡히는 문제: 내용 높이에 맞추고 최대 6줄 */
 div[data-testid="stChatInput"] textarea { font-size: 1rem; height: auto !important; min-height: 1.6em;
   max-height: 9em; field-sizing: content; }
 div[data-testid="stChatInput"] textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* 새 질문이 슥 올라오고, 답변이 살짝 뒤따라 올라온다.
+   Streamlit은 재실행 때 기존 요소를 다시 만들지 않으므로 이미 있던 말풍선·카드는 다시 움직이지 않는다. */
+@keyframes gh-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.gh-me { animation: gh-rise .34s cubic-bezier(.2, .7, .3, 1) both; }
+[class*="st-key-answer"] { animation: gh-rise .38s cubic-bezier(.2, .7, .3, 1) .2s both; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 """
 st.markdown(CSS.replace("__VARS__", VARS), unsafe_allow_html=True)
@@ -149,20 +159,6 @@ except Exception as ex:
     st.error(f"검색 인덱스를 불러오지 못했습니다. src/rag/build_index.py를 먼저 실행한 뒤 새로고침하세요.\n\n{ex}")
     st.stop()
 
-with st.sidebar:
-    show_debug = st.toggle("검색 과정 보기", value=True)
-    use_minigpt = st.toggle("MiniGPT 근거 선택 (실험)", value=False,
-                            help="검색된 후보 줄 중 답이 되는 줄을 규칙 대신 직접 학습한 MiniGPT가 고릅니다. "
-                                 "스킬·패치 변경·기본 능력치 질문에서 후보가 2개 이상일 때만 적용됩니다.")
-    M = None
-    if use_minigpt:
-        try:
-            M = load_minigpt(_mtime(GPT_DIR / "minigpt_selector.py", GPT_DIR / "mini_gpt.py"))
-        except Exception as ex:
-            st.warning(f"MiniGPT 체크포인트를 불러오지 못해 규칙 기반으로 고릅니다.\n\n{ex}")
-    st.markdown('<div class="gh-side">공식 패치노트 13.1부터 최신 패치까지, Data Dragon 챔피언·아이템 정보를 검색합니다.<br><br>'
-                '화면 테마는 오른쪽 위 ⋮ 메뉴의 Settings에서 바꿀 수 있습니다.</div>', unsafe_allow_html=True)
-
 EXAMPLES = ["상대 다리우스, 나 나서스 탑 템트리 추천해줘", "아트록스 지옥사슬 쿨 줄었어?", "잭스 13.1 패치 왜 바뀐 거야?",
             "마이 궁 뭐야?", "몰왕 조합법 알려줘", "탱커 챔피언 추천해줘"]
 MAX_TURNS = 30                        # 화면에 남겨 둘 최근 대화 수
@@ -200,12 +196,79 @@ def run_query(q, mode):
     mg = mg_note = None
     if M and M.applies(r["parsed"], r["hits"]):
         mg = M.hit_scores(r["parsed"], r["hits"])
-        rule_best = S.rule_select(r["parsed"], r["hits"])
-        same = "같은 줄" if rule_best == r["best"] else f"{rule_best + 1}번 줄"
-        mg_note = f"MiniGPT가 {r['best'] + 1}번 줄을 골랐습니다 (일치 확률 {mg[r['best']]:.2f}). 규칙 기반이었다면: {same}"
+        mg_note = f"MiniGPT가 {r['best'] + 1}번 줄을 골랐습니다 (일치 확률 {mg[r['best']]:.2f})."
     elif M:
         mg_note = "이 질문은 MiniGPT 적용 대상이 아니라 규칙 기반으로 골랐습니다 (후보 1개 또는 학습하지 않은 질문 종류)."
     return {"q": q, "mode": mode, "r": r, "mg": mg, "mg_note": mg_note}
+
+
+# 스크롤 애니메이터: 한 번만 설치되는 rAF 루프 하나가 스크롤 위치를 전부 맡는다.
+# 목표는 '맨 아래'가 아니라 '새 질문 말풍선이 화면 위쪽에 오는 위치'. 답변은 그 아래에 나타나므로
+# 처음부터 읽을 수 있고, 말풍선에 도착한 뒤에는 더 내려가지 않는다.
+# 임계 감쇠 스프링이라 출발·도착이 부드럽고, 답변이 붙어 내려갈 공간이 생겨도 처음부터 다시 시작하지 않고 이어 간다.
+FOLLOW_JS = """
+(() => {
+  if (window.__ghFollow) return;
+  const box = () => document.querySelector('[data-testid="stAppScrollToBottomContainer"]');
+  const TOP_GAP = 76;                 // 말풍선 위 여백 (상단 Deploy 줄에 가리지 않게)
+  const W = 10;                       // 스프링 강도(rad/s). 클수록 빨리 도착
+  let raf = 0, x = 0, v = 0, last = 0, until = 0, el = null, phase = 'idle', calm = 0;
+  const stop = (ev) => { if (ev && !ev.isTrusted) return; cancelAnimationFrame(raf); raf = 0; phase = 'idle'; };
+  // Streamlit은 맨 아래에 닿으면 '바닥 붙기' 모드가 되어 새 내용을 따라 내려간다.
+  // 휠 이벤트를 받으면 그 모드를 끄므로, 스크롤하는 동안엔 가짜 휠 이벤트로 꺼 둔다.
+  const unstick = () => el.dispatchEvent(new WheelEvent('wheel', { deltaY: -1 }));
+  const targetOf = () => {
+    const me = [...document.querySelectorAll('.gh-me')].at(-1);
+    const max = el.scrollHeight - el.clientHeight;
+    if (!me) return max;
+    const msg = me.closest('[data-testid="stChatMessage"]') || me;
+    const top = el.scrollTop + msg.getBoundingClientRect().top - el.getBoundingClientRect().top - TOP_GAP;
+    return Math.max(0, Math.min(top, max));
+  };
+  const step = (t) => {
+    if (!el || !el.isConnected) return stop();
+    const gap = t - last; last = t;
+    unstick();
+    if (phase === 'settle') {
+      // 질문을 보낸 직후엔 Streamlit이 화면을 그리느라 프레임이 띄엄띄엄 온다.
+      // 그 사이에 움직이면 덜컹거리므로, 프레임이 고르게 3번 연속 올 때까지(최대 0.6초) 기다렸다 출발한다.
+      calm = gap < 24 ? calm + 1 : 0;
+      if (calm >= 3 || t > until - 100) { phase = 'move'; x = el.scrollTop; v = 0; }
+      raf = requestAnimationFrame(step); return;
+    }
+    const dt = Math.min(gap / 1000, 1 / 50);   // 프레임이 밀려도 한 번에 크게 뛰지 않게
+    const target = targetOf();
+    v += (W * W * (target - x) - 2 * W * v) * dt;
+    x += v * dt;
+    el.scrollTop = x;
+    if (Math.abs(target - x) < 0.5 && Math.abs(v) < 4 && t > until) return stop();
+    raf = requestAnimationFrame(step);
+  };
+  window.__ghFollow = (ms) => {
+    const b = box(); if (!b) return;
+    const now = performance.now();
+    until = Math.max(until, now + ms);
+    if (raf && el === b) return;      // 이미 진행 중이면 시간만 늘리고 이어서 간다
+    if (el !== b) { b.addEventListener('wheel', stop, { passive: true }); b.addEventListener('pointerdown', stop, { passive: true }); }
+    el = b;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { unstick(); el.scrollTop = targetOf(); return; }
+    phase = 'settle'; calm = 0; last = now;
+    until = Math.max(until, now + 700);
+    raf = requestAnimationFrame(step);
+  };
+})();
+"""
+
+
+def scroll_to_question(tag, n):
+    """새 질문을 보내면 어디를 보고 있든 그 질문 말풍선이 화면 위쪽에 오도록 부드럽게 스크롤한다.
+    tag="a"는 답변이 그려진 뒤 한 번 더 불러, 답변 덕에 내려갈 공간이 생긴 만큼 마저 이동하게 한다.
+    n(턴 번호)을 스크립트에 넣어 매번 내용이 달라지게 해야 재실행 때 다시 실행된다."""
+    # 대화 영역이 아니라 하단 고정 영역(st.bottom)에 둔다. 대화 사이에 끼워 넣으면 매 실행마다 요소 순서가 밀려,
+    # 새 질문 말풍선이 잠깐 이전 답변 자리(펼치기 메뉴 포함)를 물려받아 보이는 문제가 생긴다.
+    with st.bottom, st.container(key=f"scroll_{tag}"):
+        st.html(f"<script>/* turn {n} {tag} */{FOLLOW_JS} window.__ghFollow(700);</script>",
+                unsafe_allow_javascript=True)
 
 
 def render_question(t):
@@ -265,6 +328,19 @@ def render_answer(t, i):
 
 # 입력창은 어디서 호출해도 화면 맨 아래에 고정된다. 먼저 읽어서, 첫 질문부터 바로 대화 화면으로 그린다.
 typed = st.chat_input("챔피언, 스킬, 아이템, 패치를 물어보세요")
+
+# 입력창 바로 아래 옵션 줄 (st.bottom: 입력창과 함께 화면 아래에 고정되는 영역)
+with st.bottom, st.container(key="opts", horizontal=True, gap="medium", vertical_alignment="center"):
+    show_debug = st.toggle("검색 근거 보기", value=True, key="opt_debug")
+    use_minigpt = st.toggle("MiniGPT로 근거 고르기 (실험)", value=False, key="opt_minigpt",
+                            help="검색된 후보 줄 중 답이 되는 줄을 규칙 대신 직접 학습한 MiniGPT가 고릅니다. "
+                                 "스킬·패치 변경·기본 능력치 질문에서 후보가 2개 이상일 때만 적용됩니다.")
+    M = None
+    if use_minigpt:
+        try:
+            M = load_minigpt(_mtime(GPT_DIR / "minigpt_selector.py", GPT_DIR / "mini_gpt.py"))
+        except Exception as ex:
+            st.caption(":orange[MiniGPT를 불러오지 못해 규칙 기반으로 고릅니다]", help=str(ex))
 q = (typed or st.session_state.pop("pending", None) or "").strip()
 chatting = bool(turns or q)
 
@@ -296,9 +372,11 @@ for i, t in enumerate(turns):
 if q:
     t = {"q": q, "mode": mode}
     render_question(t)
+    scroll_to_question("q", len(turns))
     with st.chat_message("assistant"):
         with st.spinner("패치노트에서 근거를 찾는 중..."):
             t = run_query(q, mode)
         render_answer(t, len(turns))
+    scroll_to_question("a", len(turns))
     turns.append(t)
     del turns[:-MAX_TURNS]
