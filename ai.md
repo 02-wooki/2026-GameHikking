@@ -58,6 +58,7 @@
 | `src/rag/recommend.py` | 템트리 추천 (질문의 챔피언 이름도 `search.normalize()`로 통일): 상대 피해 유형(Data Dragon info.attack/magic, 차이 2 이하면 혼합) + 집계 통계 + 방어 보너스 + 신발 + 구매 순서 |
 | `src/rag/build_index.py` | Chroma 인덱스(`gamehikking_v2`) 생성 |
 | `src/rag/eval_search.py` | 검색 평가 (dev 26, user 10, item 6 문항) |
+| `admin.py` | **로컬 전용** 질문 로그 검토 도구 (공개 사이트에 올리지 않음). 검토 이유별 필터(자동 점검 suspect/fail, 👎, 다시 물어봄, 못 알아들음, noise), 해석·답변·같은 세션 앞뒤 질문, 확인함·정답 의도(실험 10의 9개 의도)·메모 입력, 정답 의도 jsonl 내보내기. 결과는 `logs/review_labels.jsonl`에 따로 저장(원본 로그는 읽기만). 실행: `python3.10 -m streamlit run admin.py --server.port 8520 --server.address 127.0.0.1` |
 | `src/rag/query_log.py` | 질문 로거 → `logs/queries.jsonl`(질문·noise 판정·자동 점검·해석 결과), `logs/feedback.jsonl`(👍/👎). 요약 출력: `python3.10 src/rag/query_log.py`. `logs/`는 커밋 금지 |
 | `src/gpt/minigpt_selector.py` | 서비스용 MiniGPT 근거 선택기 (sft8 체크포인트, 적용 대상이 아니면 규칙으로 대체) |
 | `deploy/gamehikking.service`, `deploy/deploy_pi.sh` | 파이 배포 (systemd 유닛, 재배포 스크립트: git pull + 데이터 rsync + 재시작) |
@@ -188,6 +189,9 @@
 - 모은 뒤: `python3.10 src/rag/query_log.py`로 요약, 검토할 질문(suspect·fail·👎·다시 물어봄) 확인, `intent_gold` 칸에 정답 의도 채우기.
 - 파이 로그 위치: **저장소 밖 `/home/sysadmin/gamehikking-logs/`** (`gamehikking.service`의 `GH_LOG_DIR`). 재배포(git pull·rsync·재시작)나 저장소 재설치에도 지워지지 않음. 다음 `deploy_pi.sh` 실행 때 적용되며, 그 전에 저장소 안 `logs/`에 쌓인 로그는 배포 중 새 위치로 이어 붙이고 원본은 `*.migrated-<시각>`으로 남김.
 - 맥으로 가져오기(분석 + 백업): `bash deploy/pull_logs.sh` → `logs/pi/`(최신), `logs/pi_backup/`(날짜별 사본). 요약: `GH_LOG_DIR=logs/pi /usr/local/bin/python3.10 src/rag/query_log.py`
+- 검토·라벨링: `admin.py`(로컬 전용, 11/26 프론트엔드 세션). `pull_logs.sh`로 받은 뒤 admin에서 '파이 로그' 선택 → 확인함·정답 의도 달기 → 하단 '실험 10용으로 내보내기'(`intent_gold.jsonl`). 라벨은 `logs/review_labels.jsonl`(gitignore)에 쌓여 로그를 다시 받아도 유지됨.
+- 공개 사이트에 `/admin`을 두지 않은 이유: 질문 원문 노출 위험, Streamlit은 모든 페이지가 같은 연결을 써서 경로별 비밀번호로 막기 어려움, Riot 운영 키 신청서에 '개인 단위 정보를 보여주지 않는다'고 적음.
+- 새 로그 위치가 적용되기 전(다음 `deploy_pi.sh` 전)에는 로그가 아직 저장소 안 `logs/`에 있으므로: `PI_LOG_DIR=/home/sysadmin/2026-GameHikking/logs bash deploy/pull_logs.sh`
 
 ### E. 기타
 - 11주차 발표 덱: 10주차와 같은 스타일(남색 #0A1428 · 금색 #C8AA6E · 청록 #0AC8B9)로 새로 제작. MiniGPT는 실험 7~10b 결과를 넣음 (최종 수치를 7로 할지 8로 할지 사용자 확인).
