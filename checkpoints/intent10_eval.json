@@ -1,0 +1,261 @@
+{
+  "best_iter": 3000,
+  "labels": [
+    "overview",
+    "skill",
+    "patch",
+    "why",
+    "stats",
+    "build",
+    "item",
+    "role",
+    "other"
+  ],
+  "A_unseen_phrasing": {
+    "model": 0.5166666666666667,
+    "rule": 0.8407407407407408,
+    "by_intent": {
+      "overview": "17/60",
+      "skill": "22/60",
+      "patch": "38/60",
+      "why": "38/60",
+      "stats": "14/60",
+      "build": "50/60",
+      "item": "27/60",
+      "role": "49/60",
+      "other": "24/60"
+    },
+    "n": 540
+  },
+  "B_handwritten": {
+    "model": 0.8108108108108109,
+    "rule": 0.9054054054054054,
+    "by_intent": {
+      "overview": "7/10",
+      "skill": "8/10",
+      "patch": "8/10",
+      "why": "5/6",
+      "stats": "6/7",
+      "build": "10/10",
+      "item": "5/7",
+      "role": "6/6",
+      "other": "5/8"
+    },
+    "n": 74
+  },
+  "model_fails_B": [
+    {
+      "q": "럭스 어떤 챔이야",
+      "gold": "overview",
+      "pred": "skill",
+      "conf": 0.56
+    },
+    {
+      "q": "블츠 서폿",
+      "gold": "overview",
+      "pred": "role",
+      "conf": 0.54
+    },
+    {
+      "q": "케틀 원딜 괜찮음?",
+      "gold": "overview",
+      "pred": "why",
+      "conf": 1.0
+    },
+    {
+      "q": "리신 패시브 뭐였더라",
+      "gold": "skill",
+      "pred": "patch",
+      "conf": 1.0
+    },
+    {
+      "q": "블츠 그랩 쿨",
+      "gold": "skill",
+      "pred": "role",
+      "conf": 0.96
+    },
+    {
+      "q": "제드 이번패치 버프임?",
+      "gold": "patch",
+      "pred": "skill",
+      "conf": 1.0
+    },
+    {
+      "q": "다리우스 너프 언제 됐어",
+      "gold": "patch",
+      "pred": "why",
+      "conf": 0.97
+    },
+    {
+      "q": "제드 버프 이유가 뭐임",
+      "gold": "why",
+      "pred": "skill",
+      "conf": 0.94
+    },
+    {
+      "q": "누누 기본 체력 높음?",
+      "gold": "stats",
+      "pred": "build",
+      "conf": 0.94
+    },
+    {
+      "q": "삼위일체 재료",
+      "gold": "item",
+      "pred": "overview",
+      "conf": 1.0
+    },
+    {
+      "q": "가갑 몇골",
+      "gold": "item",
+      "pred": "overview",
+      "conf": 1.0
+    },
+    {
+      "q": "이거 뭐하는 사이트임",
+      "gold": "other",
+      "pred": "overview",
+      "conf": 0.63
+    },
+    {
+      "q": "ㅋㅋㅋ 뭐야",
+      "gold": "other",
+      "pred": "item",
+      "conf": 1.0
+    },
+    {
+      "q": "hi",
+      "gold": "other",
+      "pred": "item",
+      "conf": 1.0
+    }
+  ],
+  "rule_fails_B": [
+    {
+      "q": "럭스 어떤 챔이야",
+      "gold": "overview",
+      "rule": "skill"
+    },
+    {
+      "q": "제드 처음인데 뭐하는 챔프임",
+      "gold": "overview",
+      "rule": "skill"
+    },
+    {
+      "q": "아리 미드 어떰",
+      "gold": "overview",
+      "rule": "skill"
+    },
+    {
+      "q": "케틀 원딜 괜찮음?",
+      "gold": "overview",
+      "rule": "skill"
+    },
+    {
+      "q": "말파 탑 해볼라는데",
+      "gold": "overview",
+      "rule": "skill"
+    },
+    {
+      "q": "아리 큐 뭐임",
+      "gold": "skill",
+      "rule": "overview"
+    },
+    {
+      "q": "케틀 신발 뭐 신음",
+      "gold": "build",
+      "rule": "skill"
+    }
+  ],
+  "model_fails_A": [
+    {
+      "q": "코르키 소개해줘",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.72
+    },
+    {
+      "q": "카사딘처음해보는데어떤챔프임",
+      "gold": "overview",
+      "pred": "role",
+      "conf": 0.84
+    },
+    {
+      "q": "판테온 소개해줘",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.66
+    },
+    {
+      "q": "카사딘 소개해줘 궁금함",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.62
+    },
+    {
+      "q": "벨베스 총정리?",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.93
+    },
+    {
+      "q": "니코 총정리",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.83
+    },
+    {
+      "q": "드레이븐 처음 해보는데 어떤 챔프임",
+      "gold": "overview",
+      "pred": "role",
+      "conf": 0.51
+    },
+    {
+      "q": "조이 처음 해보는데 어떤 챔프임",
+      "gold": "overview",
+      "pred": "role",
+      "conf": 0.5
+    },
+    {
+      "q": "레나타글라스크알려주세요궁금함",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.98
+    },
+    {
+      "q": "마스터이 소개해줘?",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.75
+    },
+    {
+      "q": "워윅 소개해줘 궁금함",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.65
+    },
+    {
+      "q": "니코 총정리",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.83
+    },
+    {
+      "q": "나피리 처음 해보는데 어떤 챔프임!",
+      "gold": "overview",
+      "pred": "role",
+      "conf": 0.45
+    },
+    {
+      "q": "드레이븐 총정리",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.97
+    },
+    {
+      "q": "카사딘 소개해줘",
+      "gold": "overview",
+      "pred": "item",
+      "conf": 0.68
+    }
+  ]
+}

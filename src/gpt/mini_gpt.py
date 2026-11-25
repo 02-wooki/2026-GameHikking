@@ -33,7 +33,7 @@ class LoLDataset(Dataset):
 # 2. 미니 GPT 아키텍처 구성 요소
 # ---------------------------------------------------------------------------
 class CausalSelfAttention(nn.Module):
-    def __init__(self, d_model, n_head):
+    def __init__(self, d_model, n_head, dropout=0.0):
         super().__init__()
         assert d_model % n_head == 0
         self.d_model = d_model
@@ -43,6 +43,9 @@ class CausalSelfAttention(nn.Module):
         # Q, K, V 선형 변환 레이어 한 번에 정의
         self.c_attn = nn.Linear(d_model, d_model * 3)
         self.c_proj = nn.Linear(d_model, d_model)
+        # 드롭아웃 (실험 7부터 사용, 기본 0 = 이전 실험과 동일). 학습 파라미터가 없어 기존 체크포인트와 호환
+        self.attn_drop = nn.Dropout(dropout)
+        self.resid_drop = nn.Dropout(dropout)
 
     def forward(self, x):
         B, T, C = x.size()  # Batch, Sequence length, Embedding dim
@@ -61,24 +64,26 @@ class CausalSelfAttention(nn.Module):
         mask = torch.triu(torch.full((T, T), float('-inf'), device=x.device), diagonal=1)
         att = att + mask
         att = F.softmax(att, dim=-1)
+        att = self.attn_drop(att)
 
         y = att @ v  # (B, n_head, T, head_dim)
         y = y.transpose(1, 2).contiguous().view(B, T, C)
-        return self.c_proj(y)
+        return self.resid_drop(self.c_proj(y))
 
 
 class Block(nn.Module):
     """트랜스포머 디코더 블록"""
 
-    def __init__(self, d_model, n_head):
+    def __init__(self, d_model, n_head, dropout=0.0):
         super().__init__()
         self.ln_1 = nn.LayerNorm(d_model)
-        self.attn = CausalSelfAttention(d_model, n_head)
+        self.attn = CausalSelfAttention(d_model, n_head, dropout)
         self.ln_2 = nn.LayerNorm(d_model)
         self.mlp = nn.Sequential(
             nn.Linear(d_model, 4 * d_model),
             nn.GELU(),
             nn.Linear(4 * d_model, d_model),
+            nn.Dropout(dropout),   # 파라미터 없는 층이라 state_dict 키(mlp.0, mlp.2)는 그대로
         )
 
     def forward(self, x):
@@ -88,13 +93,14 @@ class Block(nn.Module):
 
 
 class MiniGPT(nn.Module):
-    def __init__(self, vocab_size, d_model=128, n_layer=4, n_head=4, block_size=128):
+    def __init__(self, vocab_size, d_model=128, n_layer=4, n_head=4, block_size=128, dropout=0.0):
         super().__init__()
         self.block_size = block_size
+        self.drop = nn.Dropout(dropout)
         self.transformer = nn.ModuleDict(dict(
             wte=nn.Embedding(vocab_size, d_model),
             wpe=nn.Embedding(block_size, d_model),
-            h=nn.ModuleList([Block(d_model, n_head) for _ in range(n_layer)]),
+            h=nn.ModuleList([Block(d_model, n_head, dropout) for _ in range(n_layer)]),
             ln_f=nn.LayerNorm(d_model),
         ))
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
@@ -110,7 +116,7 @@ class MiniGPT(nn.Module):
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
 
-        x = tok_emb + pos_emb
+        x = self.drop(tok_emb + pos_emb)
         for block in self.transformer.h:
             x = block(x)
         x = self.transformer.ln_f(x)
