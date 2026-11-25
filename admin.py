@@ -6,6 +6,8 @@
 # logs/review_labels.jsonl 에 따로 덧붙여 쓴다 (같은 id는 마지막 줄이 유효). pull_logs.sh로 로그를 다시 받아도 안 지워짐.
 import html
 import json
+import os
+import subprocess
 import sys
 from collections import Counter
 from datetime import datetime
@@ -21,6 +23,9 @@ st.set_page_config(page_title="GameHikking 로그 검토", page_icon="🗂️", 
 
 LABELS_PATH = ROOT / "logs" / "review_labels.jsonl"
 SOURCES = {"파이 로그 (logs/pi)": ROOT / "logs" / "pi", "이 맥 (logs)": ROOT / "logs"}
+PI_SOURCE = "파이 로그 (logs/pi)"
+# 파이에서 로그를 찾을 위치 (앞쪽 우선): 새 위치(저장소 밖) -> 옮기기 전 위치(저장소 안)
+PI_LOG_DIRS = ["/home/sysadmin/gamehikking-logs", "/home/sysadmin/2026-GameHikking/logs"]
 # 실험 10(의도 분류)과 같은 9개 의도
 INTENTS = {"overview": "챔피언 개요", "skill": "스킬 설명", "patch": "패치 변경", "why": "변경 이유",
            "stats": "능력치", "build": "템트리", "item": "아이템", "role": "역할군 추천", "other": "기타"}
@@ -105,19 +110,62 @@ def on_label(log_id, field, key):
     save_label(log_id, **{field: v})
 
 
+def pull_pi_logs():
+    """deploy/pull_logs.sh 실행 -> (성공 여부, 안내 문구). 파이가 꺼져 있거나 Wi-Fi가 끊겨도 멈추지 않게 시간 제한."""
+    script = ROOT / "deploy" / "pull_logs.sh"
+    if not script.exists():
+        return False, "deploy/pull_logs.sh가 없습니다. 저장소를 최신으로 받아 주세요."
+    pi = os.environ.get("PI", "pi-out")
+    find = "for d in " + " ".join(PI_LOG_DIRS) + "; do if [ -f $d/queries.jsonl ]; then echo $d; break; fi; done; true"
+    try:
+        probe = subprocess.run(["ssh", "-o", "ConnectTimeout=8", "-o", "BatchMode=yes", pi, find],
+                               capture_output=True, text=True, timeout=25)
+    except subprocess.TimeoutExpired:
+        return False, "파이에 연결하지 못했습니다 (25초 초과). 파이 Wi-Fi가 끊겼을 수 있습니다. 잠시 뒤 다시 시도해 주세요."
+    if probe.returncode != 0:
+        why = (probe.stderr.strip().splitlines() or ["알 수 없는 오류"])[-1]
+        return False, f"파이에 연결하지 못했습니다: {why}"
+    log_dir = probe.stdout.strip()
+    if not log_dir:
+        return False, "파이에 아직 쌓인 로그가 없습니다."
+    try:
+        run = subprocess.run(["bash", str(script)], cwd=ROOT, capture_output=True, text=True, timeout=180,
+                             env={**os.environ, "PI": pi, "PI_LOG_DIR": log_dir})
+    except subprocess.TimeoutExpired:
+        return False, "받는 중 시간이 초과됐습니다 (3분). 연결 상태를 확인하고 다시 시도해 주세요."
+    if run.returncode != 0:
+        why = (run.stderr.strip().splitlines() or run.stdout.strip().splitlines() or ["알 수 없는 오류"])[-1]
+        return False, f"받기에 실패했습니다: {why}"
+    q = ROOT / "logs" / "pi" / "queries.jsonl"
+    n = sum(1 for line in q.read_text(encoding="utf-8").splitlines() if line.strip()) if q.exists() else 0
+    when = datetime.now(QL.KST).strftime("%H:%M")
+    return True, f"{when} 파이 로그를 받았습니다 · 질문 {n}줄 ({log_dir})"
+
+
 # ---------- 상단 ----------
 st.markdown("## 질문 로그 검토")
 st.markdown('<div class="ad-sub">자동 점검에 걸렸거나 👎·재질문을 받은 질문을 확인하고, 실험 10에 쓸 정답 의도를 답니다. '
             '이 도구는 이 컴퓨터에서만 열립니다.</div>', unsafe_allow_html=True)
 
-available = {k: v for k, v in SOURCES.items() if (v / "queries.jsonl").exists()}
-if not available:
-    st.info("읽을 로그가 없습니다. `bash deploy/pull_logs.sh`로 파이 로그를 받거나, 로컬에서 앱을 써서 logs/에 질문을 쌓아 주세요.")
-    st.stop()
+top = st.columns([3, 1], vertical_alignment="bottom")
+# 버튼을 '로그 위치' 선택보다 먼저 만든다: 받은 직후 같은 실행 안에서 선택을 '파이 로그'로 바꿔야 하므로
+if top[1].button("파이 로그 받아오기", icon=":material/cloud_download:", width="stretch", type="primary"):
+    with st.spinner("파이에서 로그를 받는 중..."):
+        ok, msg = pull_pi_logs()
+    st.session_state.pull_msg = (ok, msg)
+    if ok:
+        st.session_state.src = PI_SOURCE
 
-top = st.columns([3, 1])
-src_name = top[0].segmented_control("로그 위치", list(available), default=list(available)[0], key="src") or list(available)[0]
-top[1].button("새로고침", icon=":material/refresh:", width="stretch")
+available = {k: v for k, v in SOURCES.items() if (v / "queries.jsonl").exists()}
+if "pull_msg" in st.session_state:
+    ok, msg = st.session_state.pull_msg
+    (st.caption if ok else st.error)(msg)
+if not available:
+    st.info("읽을 로그가 없습니다. 오른쪽 위 '파이 로그 받아오기'를 누르거나, 로컬에서 앱을 써서 logs/에 질문을 쌓아 주세요.")
+    st.stop()
+if st.session_state.get("src") not in available:
+    st.session_state.src = list(available)[0]
+src_name = top[0].segmented_control("로그 위치", list(available), key="src") or list(available)[0]
 rows = load_rows(available[src_name])
 labels = load_labels()
 
