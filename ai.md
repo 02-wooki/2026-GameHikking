@@ -84,7 +84,7 @@
 
 - **집계 결과 (10주차 발표 기준):** 12,457경기, 선수 기록 124,570건, 패치 16.21~16.22, 챔피언×포지션 357, 맞대결 3,034개. 기준 MIN_GAMES 20 / MIN_MATCHUP 10 / TOP_ITEMS 8.
 - **맥 집계본 (11/24 재집계, `data/processed/build_stats.json`)**: 선수 기록 182,150건(약 18,200경기), 패치 16.21·16.22·16.23, 챔피언 173명. 이후 윈도우 수집 진행 상황은 매치데이터 담당 기록 참고.
-- `build_stats.json`은 `data/processed/` 규칙으로 **gitignore** 대상. 집계 수치만 있고 PUUID 같은 개인 식별값은 없음(확인함). 파이에는 `deploy_pi.sh`가 rsync로 보냄. 원본 `participants.jsonl`·`data/raw/riot/`은 절대 커밋 금지.
+- `build_stats.json`은 `data/processed/` 규칙으로 **gitignore** 대상. 집계 수치만 있고 PUUID 같은 개인 식별값은 없음(확인함). 파이에는 `deploy_pi.sh`가 rsync로 보냄. **주의: 매치데이터 담당이 윈도우에서 파이로 바로 올리기도 해서 파이 쪽이 더 새것일 수 있음** → `deploy_pi.sh`는 `rsync -u`로 파이가 더 새 파일이면 건너뜀(실행 시 양쪽 날짜 출력). 손으로 보낼 때도 양쪽 날짜부터 비교. (11/26 맥의 11/24 집계로 파이의 11/25 최신본을 덮어쓴 사고 있었음, 윈도우에서 다시 올려 복구) 원본 `participants.jsonl`·`data/raw/riot/`은 절대 커밋 금지.
 - 수집 재시작: `py -3.10 src\data\collect_matches.py --max 50000 --days 14 --seed-start <N>` (같은 키로 두 컴퓨터 동시 실행 금지, 개발 키는 24시간마다 만료)
 - 동기화: 윈도우 `participants.jsonl` → 맥 복사 → `aggregate_matches.py` 재실행.
 
@@ -138,6 +138,12 @@
 
 ## 7. 현재 진행 중 / 다음 할 일 (11주차)
 
+> **운영 규칙 (모든 세션 공통)**
+> 1. 이번 주 한 일은 이 7장에 주차별로 계속 기록한다.
+> 2. 발표 자료 담당 세션이 이 7장을 읽고 그 주 발표 자료를 만든다.
+> 3. **`Briefing/` 폴더에 그 주 발표 자료가 추가된 것을 확인한 뒤에만** 7장을 9장 '지난 흐름'에 요약하고 7장을 비운다.
+> 4. 확인 전에는 7장 내용을 지우거나 크게 바꾸지 않는다 (추가는 가능). 발표 자료를 못 만들게 된다.
+
 10주차 발표에서 약속한 것: 맞대결 통계 확충, 칼바람 모드 추천, MiniGPT 모델 키우기, 서버 배포·실시간 시연, 보고서 초안.
 
 ### A. 라즈베리파이 배포 — ✅ 완료 (2026-11-24)
@@ -180,7 +186,8 @@
 ### D. 질문 로그 수집 (11/26~)
 - 로거·👍/👎를 배포해 팀원들이 실제 말투로 질문을 넣어 봄 → 실험 10(의도 분류)의 평가·학습 데이터로 사용 예정.
 - 모은 뒤: `python3.10 src/rag/query_log.py`로 요약, 검토할 질문(suspect·fail·👎·다시 물어봄) 확인, `intent_gold` 칸에 정답 의도 채우기.
-- 파이에서는 서버 폴더 아래 `logs/`에 쌓임 (`GH_LOG_DIR`로 위치 변경 가능).
+- 파이 로그 위치: **저장소 밖 `/home/sysadmin/gamehikking-logs/`** (`gamehikking.service`의 `GH_LOG_DIR`). 재배포(git pull·rsync·재시작)나 저장소 재설치에도 지워지지 않음. 다음 `deploy_pi.sh` 실행 때 적용되며, 그 전에 저장소 안 `logs/`에 쌓인 로그는 배포 중 새 위치로 이어 붙이고 원본은 `*.migrated-<시각>`으로 남김.
+- 맥으로 가져오기(분석 + 백업): `bash deploy/pull_logs.sh` → `logs/pi/`(최신), `logs/pi_backup/`(날짜별 사본). 요약: `GH_LOG_DIR=logs/pi /usr/local/bin/python3.10 src/rag/query_log.py`
 
 ### E. 기타
 - 11주차 발표 덱: 10주차와 같은 스타일(남색 #0A1428 · 금색 #C8AA6E · 청록 #0AC8B9)로 새로 제작. MiniGPT는 실험 7~10b 결과를 넣음 (최종 수치를 7로 할지 8로 할지 사용자 확인).
