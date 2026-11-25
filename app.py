@@ -78,6 +78,10 @@ div[data-testid="stTextInput"] > div { border-radius: 8px; border-width: 1.5px; 
 @keyframes gh-vote-down { 0% { transform: scale(.86); } 45% { transform: scale(1.28) rotate(14deg); } 75% { transform: scale(.96) rotate(-3deg); } 100% { transform: none; } }
 .gh-fb-note { transition: color .2s; }
 
+/* Riot 고지: 가장 최근 답변 아래에만, 아주 작게. 숨긴 칸은 바깥 틀까지 숨겨 간격이 남지 않게 */
+.gh-legal { font-size: .68rem; line-height: 1.55; color: var(--muted); opacity: .85; margin: .2rem 0 0; }
+[class*="st-key-legal_off"], [data-testid="stLayoutWrapper"]:has(> [class*="st-key-legal_off"]) { display: none; }
+
 /* 출처 도장 */
 .gh-stamp { display: inline-flex; gap: .5rem; align-items: baseline; margin-top: 1rem; padding: .4rem .75rem;
   border: 1.5px dashed var(--accent); border-radius: 6px; font-size: .82rem; color: var(--accent) !important;
@@ -308,7 +312,22 @@ def render_question(t):
         st.markdown(f'<div class="gh-me">{e(t["q"])}{note}</div>', unsafe_allow_html=True)
 
 
-def render_answer(t, i):
+# Riot 개발자 정책(General Policies)의 필수 고지 + 팬 프로젝트 정책(Legal Jibber Jabber) 고지. 원문(영어) 그대로 둔다.
+LEGAL_NOTICE = ("GameHikking isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games "
+                "or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all "
+                "associated properties are trademarks or registered trademarks of Riot Games, Inc. "
+                "GameHikking was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. "
+                "Riot Games does not endorse or sponsor this project.")
+
+
+def render_legal(i, show):
+    """답변마다 같은 자리에 고지 칸을 두고, 가장 최근 답변 것만 보이게 한다.
+    (최근 답변에만 요소를 넣었다 뺐다 하면 실행마다 요소 순서가 밀려 말풍선이 이전 답변 자리를 물려받는 문제가 다시 생김)"""
+    with st.container(key=f"legal_{'on' if show else 'off'}{i}"):
+        st.markdown(f'<div class="gh-legal">{e(LEGAL_NOTICE)}</div>', unsafe_allow_html=True)
+
+
+def render_answer(t, i, last=False):
     r = t["r"]
     with st.container(key=f"answer{i}"):
         if r["icon"]:
@@ -366,6 +385,8 @@ def render_answer(t, i):
                             f'<div class="t">{e(h["text"][:300])}</div></div>')
             st.markdown("".join(rows), unsafe_allow_html=True)
 
+    render_legal(i, last)
+
 
 # 입력창은 어디서 호출해도 화면 맨 아래에 고정된다. 먼저 읽어서, 첫 질문부터 바로 대화 화면으로 그린다.
 typed = st.chat_input("챔피언, 스킬, 아이템, 패치를 물어보세요")
@@ -410,7 +431,7 @@ if not chatting:
 for i, t in enumerate(turns):
     render_question(t)
     with st.chat_message("assistant"):
-        render_answer(t, i)
+        render_answer(t, i, last=(i == len(turns) - 1 and not q))
 
 if q:
     t = {"q": q, "mode": mode}
@@ -419,7 +440,7 @@ if q:
     with st.chat_message("assistant"):
         with st.spinner("패치노트에서 근거를 찾는 중..."):
             t = run_query(q, mode, q_source)
-        render_answer(t, len(turns))
+        render_answer(t, len(turns), last=True)
     scroll_to_question("a", len(turns))
     turns.append(t)
     del turns[:-MAX_TURNS]
