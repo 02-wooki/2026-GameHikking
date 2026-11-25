@@ -8,10 +8,12 @@
 import html
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import streamlit as st
 
@@ -23,6 +25,8 @@ st.set_page_config(page_title="GameHikking 로그 검토", page_icon="🗂️", 
 
 LABELS_PATH = ROOT / "logs" / "review_labels.jsonl"
 SOURCES = {"파이 로그 (logs/pi)": ROOT / "logs" / "pi", "이 맥 (logs)": ROOT / "logs"}
+if os.environ.get("GH_LOG_DIR"):                # 테스트·임시 로그 폴더를 볼 때: GH_LOG_DIR=<폴더> streamlit run admin.py
+    SOURCES[f"GH_LOG_DIR ({Path(os.environ['GH_LOG_DIR']).name})"] = Path(os.environ["GH_LOG_DIR"])
 PI_SOURCE = "파이 로그 (logs/pi)"
 # 파이에서 로그를 찾을 위치 (앞쪽 우선): 새 위치(저장소 밖) -> 옮기기 전 위치(저장소 안)
 PI_LOG_DIRS = ["/home/sysadmin/gamehikking-logs", "/home/sysadmin/2026-GameHikking/logs"]
@@ -57,11 +61,26 @@ html, body, .stMarkdown, button, input, textarea { font-family: 'IBM Plex Sans K
 .ad-why li { font-size: .82rem; }
 .ad-ctx { font-size: .8rem; color: var(--muted); line-height: 1.7; }
 .ad-ctx .me { color: var(--ink); font-weight: 700; }
+[class*="st-key-ans_"] { max-height: 260px; overflow-y: auto; margin: .35rem 0 .2rem; padding: .6rem .8rem;
+  border-left: 3px solid var(--line); background: color-mix(in srgb, var(--chip) 55%, transparent); border-radius: 0 6px 6px 0; }
+[class*="st-key-ans_"] p, [class*="st-key-ans_"] li { font-size: .86rem; line-height: 1.65; }
+[class*="st-key-ans_"] em { font-style: normal; color: var(--muted); font-size: .8rem; }
+[class*="st-key-ans_"] blockquote { font-size: .84rem; margin: .3rem 0; }
+.ad-src a { font-size: .76rem; color: var(--accent) !important; margin-right: .6rem; text-decoration: none; }
+.ad-src a:hover { text-decoration: underline; }
+.ad-old { font-size: .84rem; color: var(--ink); margin: .35rem 0 .2rem; padding: .45rem .8rem; border-left: 3px solid var(--line); }
+.ad-old span { display: block; font-size: .72rem; color: var(--muted); }
 [class*="st-key-card"] { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: .9rem 1.1rem; }
 </style>""".replace("__VARS__", VARS), unsafe_allow_html=True)
 
 
 # ---------- 데이터 ----------
+def source_label(url):
+    """패치노트 URL -> '26.19 패치노트' (본 앱과 같은 표기). 모르는 형식이면 도메인"""
+    m = re.search(r"patch-(\d+)-(\d+)-notes", url)
+    return f"{m.group(1)}.{m.group(2)} 패치노트" if m else urlparse(url).netloc.removeprefix("www.")
+
+
 def load_rows(log_dir):
     """query_log.load()를 그대로 쓰되 읽을 폴더만 바꾼다 (👍/👎·다시 물어봄 계산 포함)"""
     QL.LOG_PATH, QL.FEEDBACK_PATH = log_dir / "queries.jsonl", log_dir / "feedback.jsonl"
@@ -259,23 +278,27 @@ def render_card(x):
             if why:
                 st.markdown('<ul class="ad-why">' + "".join(f"<li>{e(w)}</li>" for w in why) + "</ul>",
                             unsafe_allow_html=True)
-            with st.expander("해석·답변·앞뒤 질문"):
+            a = x.get("answer") or {}
+            # 사용자가 실제로 본 답변: 맞았는지 판단하는 핵심이라 펼치지 않아도 보이게. 긴 답(템트리 등)은 상자 안에서 스크롤
+            if a.get("text"):
+                with st.container(key=f"ans_{lid}"):
+                    st.markdown(a["text"])
+                if a.get("sources"):
+                    st.html('<div class="ad-src">' + " ".join(
+                        f'<a href="{e(u)}" target="_blank" title="{e(u)}">출처 · {e(source_label(u))}</a>'
+                        for u in a["sources"]) + "</div>")
+            elif a.get("head"):
+                st.markdown(f'<div class="ad-old">{e(a["head"])}<span>옛 로그라 답변 첫 줄만 기록됨</span></div>',
+                            unsafe_allow_html=True)
+            with st.expander("해석·근거·앞뒤 질문"):
                 P = x.get("parsed") or {}
-                a = x.get("answer") or {}
                 kv = [("규칙 해석 의도", P.get("intent")), ("챔피언", P.get("champion")), ("슬롯", P.get("slot")),
                       ("패치", P.get("patch")), ("아이템", P.get("item")), ("역할군", P.get("role")),
                       ("이유 질문", P.get("why")), ("핵심어", ", ".join(P.get("keywords") or []) or None),
                       ("정규화", P.get("normalized")), ("근거 종류", a.get("type")),
-                      ("완화한 조건", ", ".join(a.get("relaxed") or []) or None), ("답변 첫 줄", None if a.get("text") else a.get("head")),
-                      ("고른 근거", a.get("evidence"))]
+                      ("완화한 조건", ", ".join(a.get("relaxed") or []) or None), ("고른 근거", a.get("evidence"))]
                 st.markdown('<div class="ad-kv">' + "".join(f"<div><b>{k}</b>{e(str(v))}</div>" for k, v in kv if v)
                             + "</div>", unsafe_allow_html=True)
-                if a.get("text"):                      # 11/26부터 답변 전체를 기록 (그 전 로그는 첫 줄만)
-                    with st.container(border=True):
-                        st.caption("사용자가 본 답변 전체")
-                        st.markdown(a["text"])
-                        if a.get("sources"):
-                            st.caption("출처: " + " · ".join(a["sources"]))
                 ctx = by_session.get(x["session"], [])
                 i = next((k for k, y in enumerate(ctx) if y["id"] == lid), 0)
                 near = ctx[max(0, i - 2): i + 3]
