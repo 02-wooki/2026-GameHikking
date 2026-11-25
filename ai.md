@@ -59,15 +59,15 @@
 | `src/rag/build_index.py` | Chroma 인덱스(`gamehikking_v2`) 생성 |
 | `src/rag/eval_search.py` | 검색 평가 (dev 26, user 10, item 6 문항) |
 | `admin.py` | **로컬 전용** 질문 로그 검토 도구 (공개 사이트에 올리지 않음). 검토 이유별 필터(자동 점검 suspect/fail, 👎, 다시 물어봄, 못 알아들음, noise), 해석·답변·같은 세션 앞뒤 질문, 확인함·정답 의도(실험 10의 9개 의도)·메모 입력. 고르는 즉시 그 로그 파일(`queries.jsonl`)의 해당 줄 `intent_gold`·`reviewed`·`review_note` 칸에 써 넣음(임시 파일에 쓴 뒤 바꿔치기). 같은 내용을 `logs/review_labels.jsonl`에도 남겨, 로그를 다시 받아 덮어써져도 다음 화면에서 자동으로 다시 채움. '확인한 것 숨기기'를 끄면 '확인 안 함'/'확인함' 두 섹션으로 나눠 보여줌. 실행: `python3.10 -m streamlit run admin.py --server.port 8520 --server.address 127.0.0.1`. 오른쪽 위 '파이 로그 받아오기' 버튼이 `deploy/pull_logs.sh`를 실행(파이에서 로그가 있는 폴더를 새 위치→옛 위치 순으로 찾아서 받음, 연결 실패 시 오류 문구) |
-| `src/rag/query_log.py` | 질문 로거 → `logs/queries.jsonl`(질문·noise 판정·자동 점검·해석 결과), `logs/feedback.jsonl`(👍/👎). 요약 출력: `python3.10 src/rag/query_log.py`. `logs/`는 커밋 금지 |
+| `src/rag/query_log.py` | 질문 로거 → `queries.jsonl`(질문·noise 판정·자동 점검·해석 결과, 11/26부터 **답변 전체 `answer.text`·고른 근거 줄 `answer.evidence`·출처 `answer.sources`** 포함), `feedback.jsonl`(👍/👎). 위치는 `GH_LOG_DIR`(기본 `logs/`, 파이는 `/home/sysadmin/gamehikking-logs`). 요약 출력: `python3.10 src/rag/query_log.py`. `logs/`는 커밋 금지 |
 | `src/gpt/minigpt_selector.py` | 서비스용 MiniGPT 근거 선택기 (sft8 체크포인트, 적용 대상이 아니면 규칙으로 대체) |
-| `deploy/gamehikking.service`, `deploy/deploy_pi.sh` | 파이 배포 (systemd 유닛, 재배포 스크립트: git pull + 데이터 rsync + 재시작) |
+| `deploy/gamehikking.service`, `deploy/deploy_pi.sh`, `deploy/pull_logs.sh` | 파이 배포 (systemd 유닛(`GH_LOG_DIR` 지정), 재배포 스크립트: git pull + 데이터 rsync + 로그 폴더 준비 + 재시작), 파이 로그를 맥 `logs/pi/`로 받는 스크립트 |
 | `src/data/crawler_all.py`, `build_patch_json.py`, `build_champions_json.py`, `build_items_json.py` | 패치노트·챔피언·아이템 수집/정제 → `data/processed/*.jsonl` |
 | `src/data/collect_matches.py` | Riot 매치 수집기 (`--max --days --timeline --no-raw --seed-start`) |
 | `src/data/aggregate_matches.py` | `participants.jsonl` → `data/processed/build_stats.json` |
 | `src/gpt/` | `lol_tokenizer.py`, `mini_gpt.py`, `train_gpt.py`, `build_sft_data.py` |
 | `src/gpt/experiments/` | 사전학습 v2/v3/v4, SFT 1~9 실험(`train_sft7.py`~`train_sft9.py`, `eval_sft7.py`), 의도 분류 실험 10/10b(`train_intent10*.py`), 진단 스크립트 |
-| `checkpoints/` | `.pt`(gitignore, 서비스용 `minigpt_sft8.pt`는 파이에 따로 복사 필요), 평가 결과 `sft5e~sft9_eval.json`, `sft7_run1_eval.json`, `intent10_eval.json`, `intent10b_eval.json`, 학습 로그 `*.log` |
+| `checkpoints/` | `.pt`(gitignore, 서비스용 `minigpt_sft8.pt`는 git·`deploy_pi.sh`로 안 넘어가서 파이에 따로 복사 (11/26 복사 완료). sft 버전을 바꾸면 `deploy_pi.sh`에 보내는 단계 추가), 평가 결과 `sft5e~sft9_eval.json`, `sft7_run1_eval.json`, `intent10_eval.json`, `intent10b_eval.json`, 학습 로그 `*.log` |
 | `Briefing/` | 주간 발표 자료, 인수인계서 |
 
 참고: W11 인수인계서에 언급된 `probe_queues.py`, `probe_mayhem.py`는 현재 맥 저장소의 `src/data/`에 없습니다 (윈도우에만 있을 가능성).
@@ -176,6 +176,17 @@
 - ufw에 `8433:8443/tcp` 범위 허용이 있음 → 8443만 쓰므로 오타로 보임, 좁히기 권장
 - 시연 후 공개 유지 여부 결정 필요
 
+**후속 기록 (11/24 밤 ~ 11/25, 배포 세션)**
+- **FTP 점검 주의**: 21번 포트를 밖에서 검사하면 휴대폰 핫스팟 통신사가 대신 응답함(아무 FTP 서버 없는 1.1.1.1:21도 "열림"). 그래서 "21번이 외부에 열려 있다"던 처음 판단은 잘못된 신호였을 가능성이 큼(ufw에 21 허용 규칙은 원래 없었음). proftpd는 그래도 중지함.
+- **커밋**: `470b24b` deploy 파일 + ai.md 추가(`deploy_pi.sh` 안내 문구의 "터널"을 game.wooki.cloud/CloudPanel로 수정). 이때 미리 staged돼 있던 실험 파일 3개(`pretrain_v3.py`, `train_sft5e.py`, `train_sft6.py`)가 **빈 파일로 같이 커밋되는 실수** → `95627b7`에서 추적 해제, 로컬 원본은 그대로. 교훈: 커밋 전에 `git status`로 staged 파일 확인, 필요한 경로만 지정해서 커밋.
+- **첫 재배포**: 파이 `75e8e7c` → `95627b7` pull + 서비스 재시작 → 라이트/다크 새 디자인 반영, 실제 답변 정상 확인.
+- **재배포 규칙**
+  - `git pull`만으로는 부족함: `app.py` 화면 코드는 대체로 반영되지만, `@st.cache_resource`로 불러둔 검색·모델 코드(`src/...`)는 **재시작해야** 바뀜. 데이터(`chroma_db/`, `data/processed/`)는 git에 없어서 rsync 필요.
+  - 코드만: 파이에서 `git pull origin main && sudo systemctl restart gamehikking`
+  - 데이터까지: 맥에서 push 후 `bash deploy/deploy_pi.sh`
+  - 재시작 후 첫 접속 약 20초(모델 로딩) → 직접 열어서 예열. `systemctl restart`는 매번 sudo 비밀번호 필요(재시작만 비밀번호 없이 허용하는 sudoers 규칙은 제안만 하고 안 함).
+- **발로란트 VAN-81 문의 (컴퓨터)**: 서버 세팅 탓인지 파이를 직접 점검 → 관련 없음. 11/24~25 패키지 설치·삭제 기록 없음, dnsmasq·DHCP 서버·hostapd·NetworkManager 미설치, IP는 공유기 DHCP(고정 IP 아님, netplan 2026-02-10 이후 수정 없음), DNS는 파이 내부(127.0.0.53)만, avahi는 2026-02-10부터 켜진 기본 서비스, ufw/fail2ban은 파이로 들어오는 연결만 막음. 오늘 `/etc` 변경은 모두 파이 자신용(시간·fail2ban·SSH·워치독·서비스·CloudPanel 사이트 사용자 `wooki-game`). VAN 오류는 Vanguard 쪽 문제로 보고 재부팅 → `vgc` 서비스 확인 → Vanguard 재설치 → 공유기 재부팅 순서를 안내.
+
 ### B. 증강 칼바람 수집 (청중 질문 대응)
 - 칼바람 참가자 기록에 `playerAugment1~6` 필드 존재 확인. 랭크 시드라 칼바람 표본 적음.
 - `probe_mayhem.py` 윈도우에서 실행 대기 (큐 2400 = 증강 칼바람 후보, 미확정).
@@ -189,7 +200,7 @@
 - 모은 뒤: `python3.10 src/rag/query_log.py`로 요약, 검토할 질문(suspect·fail·👎·다시 물어봄) 확인, `intent_gold` 칸에 정답 의도 채우기.
 - 파이 로그 위치: **저장소 밖 `/home/sysadmin/gamehikking-logs/`** (`gamehikking.service`의 `GH_LOG_DIR`). 재배포(git pull·rsync·재시작)나 저장소 재설치에도 지워지지 않음. 다음 `deploy_pi.sh` 실행 때 적용되며, 그 전에 저장소 안 `logs/`에 쌓인 로그는 배포 중 새 위치로 이어 붙이고 원본은 `*.migrated-<시각>`으로 남김.
 - 맥으로 가져오기(분석 + 백업): `bash deploy/pull_logs.sh` → `logs/pi/`(최신), `logs/pi_backup/`(날짜별 사본). 요약: `GH_LOG_DIR=logs/pi /usr/local/bin/python3.10 src/rag/query_log.py`
-- 검토·라벨링: `admin.py`(로컬 전용, 11/26 프론트엔드 세션). `pull_logs.sh`로 받은 뒤 admin에서 '파이 로그' 선택 → 확인함·정답 의도 달기. 라벨은 로그 파일(`logs/pi/queries.jsonl`) 자체에 바로 들어가므로 실험 10은 그 파일의 `intent_gold`를 그대로 쓰면 됨. 백업 기록 `logs/review_labels.jsonl`(gitignore) 덕분에 로그를 다시 받아도 라벨 유지.
+- 검토·라벨링: `admin.py`(로컬 전용, 11/26 프론트엔드 세션). `pull_logs.sh`로 받은 뒤 admin에서 '파이 로그' 선택 → 확인함·정답 의도 달기. 라벨은 로그 파일(`logs/pi/queries.jsonl`) 자체에 바로 들어가므로 실험 10은 그 파일의 `intent_gold`를 그대로 쓰면 됨. 백업 기록 `logs/review_labels.jsonl`(gitignore) 덕분에 로그를 다시 받아도 라벨 유지. (11/26 04:01 옛 형식 로그를 보관할 때 그때까지의 라벨 기록도 `logs/archive_old_format_202611260401/review_labels.jsonl`로 함께 옮겨짐 — 새 로그부터 새로 쌓임)
 - 공개 사이트에 `/admin`을 두지 않은 이유: 질문 원문 노출 위험, Streamlit은 모든 페이지가 같은 연결을 써서 경로별 비밀번호로 막기 어려움, Riot 운영 키 신청서에 '개인 단위 정보를 보여주지 않는다'고 적음.
 - 새 로그 위치가 적용되기 전(다음 `deploy_pi.sh` 전)에는 로그가 아직 저장소 안 `logs/`에 있음. admin의 '파이 로그 받아오기' 버튼은 두 위치를 알아서 찾음. 터미널에서 직접 받을 땐: `PI_LOG_DIR=/home/sysadmin/2026-GameHikking/logs bash deploy/pull_logs.sh`
 
@@ -197,11 +208,11 @@
 - 11주차 발표 덱: 10주차와 같은 스타일(남색 #0A1428 · 금색 #C8AA6E · 청록 #0AC8B9)로 새로 제작. MiniGPT는 실험 7~10b 결과를 넣음 (최종 수치를 7로 할지 8로 할지 사용자 확인).
 - 서비스 MiniGPT 토글을 파이에서 쓰려면 `checkpoints/minigpt_sft8.pt`(약 29MB, gitignore)를 파이에 복사해야 함. 없으면 토글을 켜도 규칙으로 고름.
 - 막 친 글자("ㅁ닝ㅁㄴㅇ러ㅣ")에도 검색이 아무 근거나 답하는 문제 있음 (로그에는 noise로 정상 기록). 안내 문구로 바꿀지 결정 필요.
-- ~~미커밋 변경 (11/26 02시 기준)~~ → 11/26 프론트엔드 세션에서 영역별로 나눠 커밋·푸시 완료 (RAG 로거·이름 정규화 / MiniGPT 실험·선택기 / 화면 / Briefing / ai.md). 파이 반영은 아직 (`git pull` 필요, 로거가 새로 들어가므로 `bash deploy/deploy_pi.sh` 권장). `.claude/launch.json`은 맥 미리보기 설정이라 커밋 안 함.
+- ~~미커밋 변경 (11/26 02시 기준)~~ → 11/26 프론트엔드 세션에서 영역별로 나눠 커밋·푸시 완료 (RAG 로거·이름 정규화 / MiniGPT 실험·선택기 / 화면 / Briefing / ai.md). 파이 반영 완료 (11/26 `2a9a0fa`까지 프론트엔드 세션이 `git pull`, 이후 `18a8363`으로 MiniGPT 세션이 `deploy_pi.sh` 재배포 — 7-G). `.claude/launch.json`은 맥 미리보기 설정이라 커밋 안 함.
 - README의 MiniGPT 표·진행 상황 체크리스트가 5c 시점이라 갱신 필요 (5d~9, 의도 분류, 템트리 추천, 아이템 데이터, 배포, 로거 반영).
 
 ### F. 프론트엔드 (대화형 화면) — 11/24~26, 프론트엔드 세션 기록
-**결과**: 게임 중에 빠르게 연달아 물어볼 수 있는 대화형 화면. 라이트/다크 모드, 질문이 올라오고 답변이 따라 나오는 움직임, 답변별 👍/👎. 파이 반영은 `f2aef55`까지 확인 (game.wooki.cloud에서 실제 질문 답변 정상).
+**결과**: 게임 중에 빠르게 연달아 물어볼 수 있는 대화형 화면. 라이트/다크 모드, 질문이 올라오고 답변이 따라 나오는 움직임, 답변별 👍/👎, Riot 법적 고지. 파이 반영 확인: `2a9a0fa`(고지 포함)까지 game.wooki.cloud에서 실제 질문 답변 정상 (이후 재배포는 7-G).
 
 **디자인 방향** (`frontend-design` 스킬로 정함)
 - 콘셉트: 패치노트 원문을 그대로 보여주는 서비스 → 출처를 '도장'처럼 표시. 처음 만든 남색+금색 게임 UI는 흔한 조합이라 버림.
@@ -217,6 +228,7 @@
 - 입력창 바로 아래 옵션 줄(`st.bottom`): '검색 근거 보기', 'MiniGPT로 근거 고르기 (실험)'. 사이드바는 없앰.
 - 답변 카드 바로 아래 오른쪽: "답변을 평가해 주세요" + 👍/👎 (`st.feedback`). 누르면 메인 컬러로 채워지고 살짝 튀어 오르는 애니메이션, 문구는 "평가해 주셔서 고마워요"로 바뀜.
 - 그 아래 '질문을 이렇게 해석했어요', MiniGPT 한 줄 설명, '검색된 근거 N개' (답변과 같은 시점에 나타남).
+- 맨 아래(펼치기 두 개 밑) 작은 글씨로 Riot 법적 고지. **가장 최근 답변 아래에만** 보임 (모든 답변에 같은 자리를 두고 최근 것만 보이게 함 — 넣었다 뺐다 하면 위 2번 문제가 다시 생김). 자세한 내용은 7-H.
 
 **움직임** — 가장 시간이 많이 든 부분
 - 새 질문 말풍선이 아래에서 올라오고(0.34초), 답변 카드가 0.2초 뒤따라 올라옴 (CSS `gh-rise`, 이미 있던 요소는 다시 안 움직임).
@@ -232,10 +244,64 @@
 - Streamlit 내부 구조에 기대는 부분이 있음: `stAppScrollToBottomContainer`, `stChatMessage`, `stLayoutWrapper`, `stFeedback`의 `aria-checked` 등. Streamlit 버전을 올리면 스크롤·말풍선·피드백 모양부터 확인. (맥 1.65.0, 파이 1.67.0 둘 다 동작 확인)
 - `st.html(..., unsafe_allow_javascript=True)` 사용 (스크롤 스크립트). 스크립트 내용에 턴 번호를 넣어야 재실행 때 다시 실행됨.
 - 프로세스가 아무 반응 없이 멈추면 macOS 권한 차단(문서 폴더 접근 등)일 수 있음. 미리보기 기능으로 띄운 서버가 그랬음 → 터미널에서 `python3.10 -m streamlit run app.py --server.port 8510`.
-- 화면 확인용 테스트 질문은 앞에 "test"를 붙이면 로거가 테스트로 분류. 👍/👎 테스트는 `GH_LOG_DIR=<임시폴더>`로 띄운 별도 서버에서.
+- 화면 확인용 테스트 질문: 로거의 test 판정은 입력 전체가 "test"·"테스트" 같은 말일 때만 noise로 분류함. **"test 마이 궁"처럼 앞에 붙이면 일반 질문으로 기록되고, "test"를 핵심어로 봐서 자동 점검이 suspect로 잡음** (11/26 테스트에서 확인). 로그를 더럽히지 않으려면 `GH_LOG_DIR=<임시폴더>`로 띄운 별도 서버에서 테스트.
 
-**커밋**: `9c27a05` 라이트/다크 리디자인 → `73dee37` 대화형 화면 → `f2aef55` 옵션 줄·움직임·질문 위치 스크롤 → `792b61f` 피드백 줄 위치·강조 (11/26).
+**커밋**: `9c27a05` 라이트/다크 리디자인 → `73dee37` 대화형 화면 → `f2aef55` 옵션 줄·움직임·질문 위치 스크롤 → `792b61f` 피드백 줄 위치·강조 → `2a9a0fa` Riot 고지 (11/26). 검토 도구·배포 관련 커밋은 7-H.
 
+### G. 질문 로그 정비 · 파이 재배포 — 11/26 새벽, MiniGPT 세션 기록
+**결과**: 파이 서비스가 `18a8363` 커밋으로 재배포됨(04:09, HTTP 200). 로그는 저장소 밖에 새 형식(답변 전체 포함)으로 처음부터 쌓이고, 파이에서 MiniGPT 토글도 동작.
+
+1. **로그를 저장소 밖으로** (재배포해도 안 지워지게)
+   - `gamehikking.service`에 `Environment=GH_LOG_DIR=/home/sysadmin/gamehikking-logs`. 실행 중인 프로세스 환경 변수로 적용 확인.
+   - `deploy_pi.sh` 3.5단계: 로그 폴더 생성 + 저장소 안 `logs/`의 `queries.jsonl`·`feedback.jsonl`이 있으면 새 위치에 이어 붙이고 원본은 `*.migrated-<시각>`으로 이름만 바꿈.
+   - `deploy/pull_logs.sh`(새 파일): 파이 → 맥 `logs/pi/`(지우지 않고 받음) + `logs/pi_backup/`에 날짜별 사본(SD 카드 고장 대비).
+2. **로그에 답변 전체 기록** — 검토 사이트(admin.py)에서 첫 줄만으로는 맞게 답했는지 판단이 어려웠음
+   - `query_log.record()`의 `answer`에 `text`(사용자가 본 답변 전체, 마크다운), `evidence`(고른 근거 줄), `sources`(출처 URL) 추가. `head`(첫 줄)는 옛 로그 호환용으로 유지. 길이는 답변당 약 100~1,200자.
+   - `admin.py` 펼치기 영역에 '고른 근거' + 테두리 상자로 답변 전체·출처 표시 (`text`가 없는 옛 로그는 '답변 첫 줄').
+3. **옛 형식 로그 비움** (형식 통일, 삭제 아닌 보관)
+   - 맥: 질문 23·피드백 18·검토 라벨 10줄과 `logs/pi`, `logs/pi_backup` → `logs/archive_old_format_202611260401/`
+   - 파이: 저장소 안 `logs/queries.jsonl`(2줄) → `queries.jsonl.old-format-202611260401` (배포 3.5단계가 옮기지 않는 이름)
+   - 그래서 7-D 마지막 줄의 "새 로그 위치 적용 전" 안내는 이제 해당 없음. 새 위치(`/home/sysadmin/gamehikking-logs`)만 보면 됨.
+4. **커밋·배포**: `18a8363` "Log full answers and keep Pi logs outside the repo" (query_log·admin·service·pull_logs) → `main` 푸시 → `bash deploy/deploy_pi.sh` (sudo 비밀번호는 사용자가 터미널에서 입력).
+5. **파이에서 "MiniGPT를 불러오지 못했습니다"**
+   - 원인: `checkpoints/*.pt`는 gitignore라 `git pull`로 안 넘어가고, `deploy_pi.sh`의 rsync 목록에도 없음 → 파이에 `minigpt_sft8.pt`가 없었음. (토크나이저 `tokenizer_out/`은 git에 있어 정상)
+   - 조치: `minigpt_sft8.pt`(29MB)만 scp로 한 번 복사, SHA-256 일치 · 파이 가상환경에서 불러오기 OK. 서비스 재시작 불필요(실패는 캐시되지 않음).
+   - 규칙: **서비스용 sft 버전을 올릴 때마다 `deploy_pi.sh`도 같이 고쳐 새 체크포인트를 보낸다** (이번엔 사용자 결정으로 스크립트는 안 고치고 파일만 보냄).
+6. **질문 넣기용 예시 30개** (Claude가 게이머 말투로 작성: 줄임말 블츠·쓰레쉬·몰왕, 띄어쓰기 생략, 반말 어미, 규칙이 못 알아들을 법한 역할군·통계 질문 포함)
+   - 서비스 점검용으로는 그대로 넣어도 됨. 단 **의도 분류(실험 10) 학습·평가에서는 빼야 함**: 실제 사람 말투를 모으려는 목적이고, 섞이면 "실제 질문 정확도"가 부풀려짐.
+   - 방법: 시크릿 창 하나에서 몰아서 입력 → 한 세션으로 묶임 → admin 메모에 "Claude 작성" 표시 후 학습 데이터에서 그 세션 제외. ("test"를 붙이면 noise로 분류돼 답변 점검에도 못 씀)
+
+**발표 포인트 (제안)**: "AI가 맞게 답했는지 사람이 검토할 수 있는 구조" — 실제 질문 → 자동 점검(ok/suspect/fail) + 👍/👎 + 다시 물어봄 감지 → 로컬 검토 사이트에서 답변 전체·근거 확인 → 정답 의도 라벨 → 다음 의도 분류 학습 데이터. 배포에서 데이터(로그)와 코드를 분리한 이유도 함께.
+
+
+### H. Riot 정책 대응 · 검토 도구 · 배포 사고 — 11/26, 프론트엔드 세션 기록
+**결과**: 사이트에 Riot 법적 고지 표시, Riot 운영 키(Production) 신청서 제출 + 소유 확인 파일(`riot.txt`) 공개. 로그 검토 도구(`admin.py`)가 답변 전체를 보여주고 라벨을 로그 파일에 바로 씀. 배포 중 집계 파일을 옛 버전으로 덮어쓴 사고 → 복구 + 재발 방지.
+
+1. **저작권·정책 점검** (README에만 고지가 있고 사이트엔 없었음)
+   - 확인한 문서: Riot Developer General Policies(2025-05-29 개정), Developer Portal 문서, Legal Jibber Jabber(팬 프로젝트 정책).
+   - 필수: "[제품] isn't endorsed by Riot Games…" 문구를 사용자 눈에 잘 띄는 곳에. 팬 정책 문구("created under Riot Games' 'Legal Jibber Jabber' policy…")도 있어 둘 다 넣음.
+   - 문제없음: 상표·로고 미사용(도메인 wooki.cloud, 이름 GameHikking), MMR 계산 없음, 비상업, 집계 파일에 PUUID 없음.
+   - 정책에 안 나와 불확실: 패치노트 원문 인용(출처 링크로 대응 중), Data Dragon 아이콘(General Policies는 허용 쪽, 팬 정책엔 "앱에 아이콘 쓰지 말라" 문구), 데이터 보관 규칙(Terms of Use는 안 읽음).
+2. **사이트 고지** (`2a9a0fa`): 답변 맨 아래 작은 글씨(약 11px), 가장 최근 답변 아래에만. 영어 원문 두 문구 그대로 (`app.py`의 `LEGAL_NOTICE`). 대화 전 첫 화면에는 없음(필요하면 추가).
+3. **Riot 운영 키(Production) 신청** — 사용자가 직접 제출
+   - Personal 키는 "공개 서비스에 쓰면 안 됨"이 명시돼 있어 Production 선택. 규모·비상업이어도 등록 예외 없음("All products must be registered").
+   - 신청서: Product Description **1,500자 제한**(넘으면 잘림) → 1,471자 영어 요약본 제출 (수업·학교, 데이터 출처, 사이트는 API를 직접 부르지 않고 집계 파일만 읽음, 사용 API LEAGUE-V4/SUMMONER-V4/MATCH-V5, 요청 속도, 개인정보, 고지, 팀원·연락처). "Are you organizing tournaments?" → No.
+   - 소유 확인: `https://game.wooki.cloud/riot.txt`가 인증 코드만 돌려줘야 함. 파일 대신 CloudPanel → Sites → game.wooki.cloud → Vhost의 443 server 블록에 `location = /riot.txt { default_type text/plain; return 200 "<코드>"; }` 추가 (사용자가 직접). 응답이 코드 36자만·줄바꿈 없음·text/plain인 것 확인. **이 규칙은 지우지 말 것** (재심사·확인에 쓰일 수 있음).
+   - 승인 결과는 아직 모름. 승인되면 윈도우 매치 수집도 그 키로 바꾸기.
+4. **배포 사고: 파이 `build_stats.json`을 옛 버전으로 덮어씀** (5장 주의 문구 참고)
+   - 맥의 11/24 집계(840KB)로 파이의 11/25 최신본(1.7MB, 매치데이터 세션이 윈도우에서 바로 올린 것)을 덮어씀. rsync 미리보기 표시를 잘못 읽음. 바로 사용자에게 알림 → 재시작은 보류(앱이 메모리에 최신본을 들고 있었을 가능성) → 매치데이터 세션이 다시 올려 복구.
+   - 재발 방지(`c22f97a`): `deploy_pi.sh`가 `data/processed/`를 `rsync -u`로 보냄(파이가 더 새것이면 건너뜀) + 실행 시 양쪽 날짜 출력. `chroma_db`는 파이 앱이 열기만 해도 수정 시각이 바뀌어 `-u`를 쓰지 않음.
+   - 복구 후 확인: 나서스 탑 템트리 근거가 334경기 → **1552경기**, 맞대결(다리우스 13경기)도 새로 나옴.
+5. **로그 검토 도구 `admin.py`** (로컬 전용, 공개 사이트에 없음 — 이유는 7-D)
+   - `73d66e4` 처음 만듦: 검토 이유 필터, 카드(질문·점검 이유·해석·앞뒤 질문), 정답 의도(실험 10의 9개)·메모·확인함.
+   - `1d4ea57` '파이 로그 받아오기' 버튼: `pull_logs.sh` 실행, 파이에서 로그 폴더를 새 위치→옛 위치 순으로 찾음, 연결 실패 시 25초/3분 안에 오류 문구.
+   - `8661984` 라벨을 고르는 즉시 로그 파일의 그 줄(`intent_gold`·`reviewed`·`review_note`)에 씀(임시 파일 후 바꿔치기), `review_labels.jsonl`에도 남겨 로그를 다시 받아 덮어써지면 자동 복구. '확인한 것 숨기기'를 끄면 '확인 안 함'/'확인함' 두 섹션. 내보내기 버튼 삭제(로그 파일 자체가 라벨을 가짐).
+   - `4fa642b` 사용자가 본 **답변 전체를 카드에 바로** 표시(긴 답은 상자 안 스크롤) + 출처 짧은 링크, 옛 로그는 "첫 줄만 기록됨" 표시, 근거 원문은 펼치기 안. `GH_LOG_DIR`로 켜면 그 폴더를 로그 위치로 추가(테스트용).
+   - 메모(`review_note`)는 사람이 읽는 원인 기록용. 학습에는 `query`+`intent_gold`만 씀(11/26 기준 로그를 읽는 학습 코드는 아직 없음). 규칙이 맞게 처리한 질문도 정답 의도를 달아야 함(맞은 예도 필요). 단 지금 필터에 '문제없음(ok)' 항목이 없어 그런 질문은 목록에 안 보임 → 추가 여부 미정.
+6. **남은 것·주의**
+   - 노트북에서 켜 둔 앱 서버(8510)는 재시작 전까지 옛 로거를 메모리에 들고 있어 답변 전체를 기록하지 않음.
+   - 11/26 테스트용 서버: 8511(본 앱, 로그는 임시 폴더), 8521(검토 도구, 같은 임시 로그). 실제 로그와 무관, 꺼도 됨.
+   - 자동 점검이 질문 앞 "test"를 핵심어로 보고 suspect로 잡음(위 F '주의할 점'). 고치려면 `query_log.py`(RAG 쪽)에서 test 단어를 핵심어에서 빼기.
 ---
 
 ## 8. 발표 자료 링크 (claude.ai 아티팩트)
