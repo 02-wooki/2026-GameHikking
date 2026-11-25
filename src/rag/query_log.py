@@ -164,7 +164,10 @@ def record(q, mode, r, session, turn, source="typed", minigpt=False, rule_best=N
                 "found": best is not None,
                 "type": hits[best]["meta"].get("type") if best is not None and best < len(hits) else None,
                 "relaxed": r.get("relaxed") or [],
-                "head": _answer_head(r)},
+                "head": _answer_head(r),                    # 목록용 요약 (옛 로그는 이것만 있음)
+                "text": r.get("answer") or "",              # 사용자가 본 답변 전체 (마크다운)
+                "evidence": hits[best].get("text") if best is not None and best < len(hits) else None,
+                "sources": r.get("sources") or []},
             "check": {"status": status, "reasons": reasons},
             "minigpt": minigpt,
             "intent_gold": None,

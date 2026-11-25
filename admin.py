@@ -266,9 +266,16 @@ def render_card(x):
                       ("패치", P.get("patch")), ("아이템", P.get("item")), ("역할군", P.get("role")),
                       ("이유 질문", P.get("why")), ("핵심어", ", ".join(P.get("keywords") or []) or None),
                       ("정규화", P.get("normalized")), ("근거 종류", a.get("type")),
-                      ("완화한 조건", ", ".join(a.get("relaxed") or []) or None), ("답변 첫 줄", a.get("head"))]
+                      ("완화한 조건", ", ".join(a.get("relaxed") or []) or None), ("답변 첫 줄", None if a.get("text") else a.get("head")),
+                      ("고른 근거", a.get("evidence"))]
                 st.markdown('<div class="ad-kv">' + "".join(f"<div><b>{k}</b>{e(str(v))}</div>" for k, v in kv if v)
                             + "</div>", unsafe_allow_html=True)
+                if a.get("text"):                      # 11/26부터 답변 전체를 기록 (그 전 로그는 첫 줄만)
+                    with st.container(border=True):
+                        st.caption("사용자가 본 답변 전체")
+                        st.markdown(a["text"])
+                        if a.get("sources"):
+                            st.caption("출처: " + " · ".join(a["sources"]))
                 ctx = by_session.get(x["session"], [])
                 i = next((k for k, y in enumerate(ctx) if y["id"] == lid), 0)
                 near = ctx[max(0, i - 2): i + 3]

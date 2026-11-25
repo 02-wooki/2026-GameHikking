@@ -11,6 +11,8 @@ ExecStart=/home/sysadmin/2026-GameHikking/.venv/bin/streamlit run app.py --serve
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+# 질문 로그(query_log.py)는 저장소 밖에 쌓는다: 저장소를 새로 받거나 정리해도 로그가 남도록
+Environment=GH_LOG_DIR=/home/sysadmin/gamehikking-logs
 
 [Install]
 WantedBy=multi-user.target
