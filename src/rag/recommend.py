@@ -55,6 +55,8 @@ def damage_type(name):
 
 
 def parse(q):
+    from search import normalize                       # 줄임말·붙여 쓴 이름 ('마이', '마스터이') -> 정식 이름
+    q = normalize(q)
     champs, _, _, _ = data()
     found = []
     for n in sorted(champs, key=len, reverse=True):

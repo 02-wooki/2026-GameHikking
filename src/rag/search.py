@@ -35,6 +35,8 @@ STAT_NAME = {"hp": "체력", "mp": "마나", "attackdamage": "공격력", "attac
 PATCH_WORDS = ("패치", "너프", "버프", "상향", "하향", "변경", "바뀌", "바꼈", "바뀐", "바뀜", "달라",
                "줄었", "줄어", "올랐", "올라", "늘었", "늘어", "낮아", "높아", "증가", "감소", "조정")
 WHY_WORDS = ("왜", "이유", "의도")
+VS_WORDS = ("상대", "vs", "VS", "Vs", "맞라인", "카운터")          # 챔피언과 함께 쓰면 템트리(상대 대응) 질문
+LANE_WORDS = ("탑", "정글", "미드", "원딜", "바텀", "봇", "서폿", "서포터")
 ITEM_WORDS = ("아이템", "템", "가격", "골드", "조합", "재료", "얼마", "효과", "능력치", "스탯")
 BUILD_WORDS = ("템트리", "빌드", "아이템 추천", "템 추천", "뭐 사", "뭘 사", "뭐사", "코어템", "아이템 뭐", "템 뭐")
 ITEM_ALIASES = {"몰왕": "몰락한 왕의 검", "가갑": "가시 갑옷", "존야": "존야의 모래시계", "무대": "무한의 대검",
@@ -123,12 +125,38 @@ class Parsed:
     patch_auto: bool = False          # 패치를 안 적어서 '최신 변경 패치'로 채운 경우
     patch_unknown: str = None         # 적었지만 데이터에 없는 패치
     slot: str = None
-    intent: str = "free"              # patch / skill / stats / role / free
+    intent: str = "free"              # patch / skill / stats / role / overview / free
     why: bool = False
     role: str = None
     stat: str = None
     item: str = None
     keywords: list = field(default_factory=list)
+
+
+def normalize(q):
+    """챔피언 줄임말·붙여 쓴 이름·영문 이름을 정식 이름으로 바꾼다 ('마이 탑' -> '마스터 이 탑').
+    검색(parse)과 템트리(recommend.parse)가 같은 결과를 쓰도록 맨 앞에서 한 번만 적용한다."""
+    def covered(text, i):                                     # i 위치가 이미 정식 이름 안이면 건드리지 않는다
+        for n in NAMES:
+            for m in re.finditer(re.escape(n), text):
+                if m.start() <= i < m.end():
+                    return True
+        return False
+
+    out = q
+    for ns, n in NAMES_NOSPACE:                               # '마스터이' -> '마스터 이'
+        if ns != n and ns in out and not covered(out, out.index(ns)):
+            out = out.replace(ns, n)
+    for a, n in ALIASES.items():                              # 긴 줄임말부터
+        i = out.find(a)
+        while i != -1:
+            if not covered(out, i):
+                out = out[:i] + n + out[i + len(a):]
+                i = out.find(a, i + len(n))
+            else:
+                i = out.find(a, i + len(a))
+    out = re.sub(r"[A-Za-z]{3,}", lambda m: EN_NAMES.get(m[0].lower(), m[0]), out)
+    return out
 
 
 def find_champion(q):
@@ -184,9 +212,25 @@ def keywords(t):
     return out
 
 
+def first_champion(q):
+    """질문에 나온 챔피언 중 '상대'로 지목되지 않은 첫 챔피언 (없으면 find_champion)"""
+    found = []
+    for n in NAMES:
+        for m in re.finditer(re.escape(n), q):
+            if not any(st <= m.start() < en for st, en, _ in found):
+                found.append((m.start(), m.end(), n))
+    found.sort()
+    if len(found) >= 2:
+        mine = [n for st, en, n in found if not any(w in q[max(0, st - 4):st] for w in VS_WORDS)]
+        if mine:
+            return mine[0]
+    return found[0][2] if found else find_champion(q)
+
+
 def parse(q):
+    q = normalize(q)
     P = Parsed(query=q)
-    P.champion = find_champion(q)
+    P.champion = first_champion(q)
     skill_slot = None
     if not P.champion:                                         # 챔피언 없이 고유 스킬명만 적은 경우
         hit = next((n for n in sorted(UNIQUE_SKILL, key=len, reverse=True) if n in q), None)
@@ -216,7 +260,7 @@ def parse(q):
         P.role = next((ROLE_WORDS[w] for w in sorted(ROLE_WORDS, key=len, reverse=True) if w in q), None)
     stat_word = next((w for w in sorted(STAT_WORDS, key=len, reverse=True) if w in q), None)
     P.item = find_item(rest)
-    if any(w in q for w in BUILD_WORDS):
+    if any(w in q for w in BUILD_WORDS) or (P.champion and any(w in q for w in VS_WORDS)):
         P.intent = "build"
     elif P.item and (not P.champion or any(w in q for w in ITEM_WORDS)):
         P.intent = "item"
@@ -229,6 +273,11 @@ def parse(q):
     elif P.champion:
         P.intent = "skill"
     P.keywords = keywords(re.sub(r"(?<![A-Za-z])[QWERqwer](?![A-Za-z])", " ", rest))
+    if P.intent == "skill" and not P.slot and P.keywords and all(
+            any(k.startswith(w) for w in LANE_WORDS) for k in P.keywords):
+        P.keywords = []                                        # '탑인데'처럼 라인 말만 남은 경우
+    if P.intent == "skill" and not P.slot and not P.keywords:
+        P.intent = "overview"                                  # 챔피언 이름만 물은 경우 ('아리', '아리 알려줘', '아리 스킬')
     if P.intent == "patch" and P.champion and not P.patch and P.champion in BY_CHAMP:
         # 패치를 안 적은 경우: '질문한 항목(슬롯·키워드)이 마지막으로 바뀐 패치'
         def hits(r):
@@ -264,7 +313,7 @@ def search(q, mode=None, n=8):
         conds["type"] = {"type": "item"}
         conds["item"] = {"name": P.item}
         n = 5
-    elif P.intent == "build":
+    elif P.intent in ("build", "overview"):
         conds["type"] = {"type": "profile"}
     elif P.intent == "role":
         conds["type"] = {"type": "profile"}
@@ -320,6 +369,43 @@ def _fmt_list(xs):
     return "/".join(f"{x:g}" if isinstance(x, (int, float)) else str(x) for x in xs)
 
 
+SLOT_ORDER = ["패시브", "Q", "W", "E", "R"]
+
+
+def _first_sentences(text, limit=220):
+    """설명(lore)을 앞 문장 위주로 limit자 안에서 자른다"""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = cut.rfind(". ")
+    return cut[:end + 1] if end > 60 else cut + "…"
+
+
+def overview(c, mode=None, query=""):
+    """챔피언 이름만 물었을 때: 프로필, 설명, 스킬(패시브~R), 일반 템트리"""
+    import recommend as R
+    lines = [f"**{c['name']} · {c['title']}**",
+             f"- 역할군: {', '.join(c['roles']) or '정보 없음'} · 자원: {c['partype'] or '없음'}"]
+    if c.get("lore"):
+        lines += ["", f"_{_first_sentences(c['lore'])}_"]
+    lines += ["", "**스킬**"]
+    skills = sorted(c["skills"], key=lambda s: SLOT_ORDER.index(s["slot"]) if s["slot"] in SLOT_ORDER else 9)
+    for s in skills:
+        cd = f" (재사용 대기시간 {_fmt_list(s['cooldown'])}초)" if s.get("cooldown") and any(s["cooldown"]) else ""
+        lines.append(f"- **{SLOT_LABEL.get(s['slot'], s['slot'])} - {s['name']}**: {s['description']}{cd}")
+    lane = next((w for w in sorted(LANE_WORDS, key=len, reverse=True) if w in query), "")
+    r = R.recommend(f"{c['name']} {lane} 템트리 추천")       # 질문에 라인이 있으면 그 라인 (없으면 가장 많이 간 라인)
+    lines.append("")
+    if r["ok"]:
+        lines.append(R.to_markdown(r))
+        if mode and mode != "소환사의 협곡":
+            lines.append(f"_템트리는 소환사의 협곡 솔로랭크 기준입니다 ({mode} 데이터는 아직 없습니다)._")
+    else:
+        lines.append(f"**템트리**: {r['message']}")
+    lines += ["", f"_챔피언 정보: Data Dragon {DD_VERSION} 기준_"]
+    return {"answer": "\n".join(lines), "icon": c["icon"], "build": r if r["ok"] else None}
+
+
 def answer(q, mode=None, selector=None):
     """selector: fn(P, hits) -> 인덱스. 주면 이번 호출에만 쓴다 (Streamlit 세션끼리 전역 선택기를 공유하지 않도록)"""
     P, hits, relaxed = search(q, mode)
@@ -337,6 +423,9 @@ def answer(q, mode=None, selector=None):
         notes.append(f"조건을 완화해 검색했습니다 (제외한 조건: {', '.join(relaxed)}).")
 
     t = m.get("type")
+    if P.intent == "overview" and P.champion in CHAMPS:      # 챔피언 개요: 프로필 -> 설명 -> 스킬 -> 템트리
+        out.update(overview(CHAMPS[P.champion], mode, P.query))
+        return out
     if P.intent == "build":                                   # 템트리 추천 (recommend.py)
         import recommend as R
         r = R.recommend(P.query)
