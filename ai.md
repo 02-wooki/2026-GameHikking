@@ -379,12 +379,16 @@
 
 | 이름 | 링크 |
 |---|---|
+| 11주차 덱 (14장) | https://claude.ai/artifact/KbrQRBfePKNruH63KCwTVy |
+| 11주차 대본 | Notion: 2026-2학기 › 인공지능 › GameHikking 11주차 발표 대본 (사본: `Briefing/GameHikking 11주차 발표 대본.md`) |
 | 10주차 덱 (9장) | https://claude.ai/artifact/EsZrieGBERUDia34EzzKHA |
 | 10주차 대본 | https://claude.ai/artifact/9NAABgn6rBFJajjJoXEsf1 |
 | 9주차 덱 | https://claude.ai/artifact/ViDmP5FSbmySex9C3wGdqX |
 | 9주차 대본 | https://claude.ai/artifact/Kmg5ZzKPLERNtjLx76Fd5S |
 
 10주차 덱을 수정할 때는 반드시 먼저 read 후 작업합니다.
+
+**남은 발표 일정 (11/26 사용자 확인):** 12/3(12주차, 실험 마무리) · 12/10(13주차, 최종 발표 + 기술 보고서). 12/15부터 시험. 대본은 Notion 인공지능 페이지 아래에 두고, 발표자가 대본을 그대로 읽으므로 AI 개념(과적합·드롭아웃·손실 등)을 쉽게 풀어 씁니다.
 
 ---
 
