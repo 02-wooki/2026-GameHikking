@@ -2,12 +2,15 @@
 # 실행: streamlit run app.py   (먼저 src/rag/build_index.py로 'gamehikking_v2' 컬렉션을 만들 것)
 # 라이트/다크: .streamlit/config.toml의 [theme.light]/[theme.dark] + 아래 TOKENS
 import html
+import re
 import sys
+from urllib.parse import urlparse
 from pathlib import Path
 
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "rag"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "gpt"))
 
 st.set_page_config(page_title="GameHikking", page_icon="📜", layout="centered")
 
@@ -47,14 +50,14 @@ div[data-testid="stTextInput"] > div { border-radius: 8px; border-width: 1.5px; 
 .gh-hint { font-size: .85rem; color: var(--muted); margin: 1.4rem 0 .5rem; }
 
 /* 답변: 패치노트 원문을 인용 블록처럼 */
-.st-key-answer { position: relative; margin-top: 2.2rem; padding: 1.3rem 1.4rem 1.2rem;
+[class*="st-key-answer"] { position: relative; padding: 1.2rem 1.3rem 1.1rem;
   background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
 .gh-head { display: flex; align-items: center; gap: .85rem; }
 .gh-head img { width: 52px; height: 52px; border-radius: 8px; border: 1px solid var(--line); }
 .gh-q { font-size: .85rem; color: var(--muted); }
-.st-key-answer .stMarkdown p, .st-key-answer .stMarkdown li { line-height: 1.8; }
-.st-key-answer .stMarkdown em { font-style: normal; color: var(--muted); font-size: .86rem; }
-.st-key-answer blockquote { margin: .6rem 0; padding: .7rem 1rem; background: var(--quote);
+[class*="st-key-answer"] .stMarkdown p, [class*="st-key-answer"] .stMarkdown li { line-height: 1.8; }
+[class*="st-key-answer"] .stMarkdown em { font-style: normal; color: var(--muted); font-size: .86rem; }
+[class*="st-key-answer"] blockquote { margin: .6rem 0; padding: .7rem 1rem; background: var(--quote);
   border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
 
 /* 출처 도장 */
@@ -88,6 +91,24 @@ div[data-testid="stTextInput"] > div { border-radius: 8px; border-width: 1.5px; 
 .gh-empty { margin-top: 2.6rem; color: var(--muted); font-size: .9rem; }
 .gh-side { font-size: .8rem; color: var(--muted); line-height: 1.7; }
 
+/* 대화를 시작하면 제목을 작게 */
+.stMarkdown h1.gh-title.compact { font-size: 1.6rem !important; margin-bottom: .6rem; }
+.st-key-topbar { align-items: center; }
+
+/* 채팅: 내 질문은 오른쪽 말풍선, 답변은 아바타 없이 카드만 */
+div[data-testid="stChatMessage"] { background: transparent; padding: .25rem 0; gap: 0; }
+div[data-testid="stChatMessage"]:has(.gh-me) { justify-content: flex-end; }
+div[data-testid="stChatMessage"]:has(.gh-me) > div:first-child,
+div[data-testid="stChatMessage"]:has([class*="st-key-answer"]) > div:first-child { display: none; }
+div[data-testid="stChatMessage"]:has(.gh-me) [data-testid="stChatMessageContent"] { flex: 0 1 auto; margin: 0 0 0 auto; }
+.gh-me { background: var(--accent); color: var(--paper); padding: .55rem .95rem; border-radius: 14px 14px 4px 14px;
+  max-width: 34em; line-height: 1.6; margin-left: auto; }
+.gh-mode { font-size: .72rem; opacity: .75; margin-top: .15rem; text-align: right; }
+/* 빈 입력창이 웹폰트 로딩 전 높이로 크게 잡히는 문제: 내용 높이에 맞추고 최대 6줄 */
+div[data-testid="stChatInput"] textarea { font-size: 1rem; height: auto !important; min-height: 1.6em;
+  max-height: 9em; field-sizing: content; }
+div[data-testid="stChatInput"] textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 """
@@ -95,38 +116,68 @@ st.markdown(CSS.replace("__VARS__", VARS), unsafe_allow_html=True)
 e = html.escape
 
 
+RAG_DIR = Path(__file__).resolve().parent / "src" / "rag"
+GPT_DIR = Path(__file__).resolve().parent / "src" / "gpt"
+
+
+def _mtime(*files):
+    return tuple(f.stat().st_mtime for f in files)
+
+
+# 인자로 파일 수정 시각을 넘겨, 서버를 켜 둔 채 코드가 바뀌어도 예전 모듈을 계속 쓰지 않게 한다
 @st.cache_resource
-def load_search():
+def load_search(ver):
+    import importlib
     import search
+    importlib.reload(search)
     search.collection()               # 임베딩 모델·DB를 한 번만 로드
     return search
 
 
+@st.cache_resource
+def load_minigpt(ver):
+    import importlib
+    import minigpt_selector as M
+    importlib.reload(M)
+    M._load()                         # 모델을 한 번만 로드 (체크포인트가 없으면 여기서 예외)
+    return M
+
+
 try:
-    S = load_search()
+    S = load_search(_mtime(RAG_DIR / "search.py", RAG_DIR / "recommend.py"))
 except Exception as ex:
     st.error(f"검색 인덱스를 불러오지 못했습니다. src/rag/build_index.py를 먼저 실행한 뒤 새로고침하세요.\n\n{ex}")
     st.stop()
 
 with st.sidebar:
     show_debug = st.toggle("검색 과정 보기", value=True)
+    use_minigpt = st.toggle("MiniGPT 근거 선택 (실험)", value=False,
+                            help="검색된 후보 줄 중 답이 되는 줄을 규칙 대신 직접 학습한 MiniGPT가 고릅니다. "
+                                 "스킬·패치 변경·기본 능력치 질문에서 후보가 2개 이상일 때만 적용됩니다.")
+    M = None
+    if use_minigpt:
+        try:
+            M = load_minigpt(_mtime(GPT_DIR / "minigpt_selector.py", GPT_DIR / "mini_gpt.py"))
+        except Exception as ex:
+            st.warning(f"MiniGPT 체크포인트를 불러오지 못해 규칙 기반으로 고릅니다.\n\n{ex}")
     st.markdown('<div class="gh-side">공식 패치노트 13.1부터 최신 패치까지, Data Dragon 챔피언·아이템 정보를 검색합니다.<br><br>'
                 '화면 테마는 오른쪽 위 ⋮ 메뉴의 Settings에서 바꿀 수 있습니다.</div>', unsafe_allow_html=True)
 
-st.markdown('<h1 class="gh-title">패치노트에<br>물어보세요</h1>'
-            '<p class="gh-lede">챔피언, 스킬, 아이템, 패치 변경점을 물으면 공식 패치노트와 Data Dragon에서 찾은 문장을 '
-            '고쳐 쓰지 않고 그대로, 출처와 함께 보여줍니다.</p>', unsafe_allow_html=True)
-
-query = st.text_input("질문", key="q", label_visibility="collapsed", placeholder="예: 아트록스 W 쿨타임 줄었어?")
-mode = st.segmented_control("게임 모드", ["소환사의 협곡", "칼바람", "아레나"], default="소환사의 협곡",
-                            label_visibility="collapsed") or "소환사의 협곡"
-
 EXAMPLES = ["상대 다리우스, 나 나서스 탑 템트리 추천해줘", "아트록스 지옥사슬 쿨 줄었어?", "잭스 13.1 패치 왜 바뀐 거야?",
             "마이 궁 뭐야?", "몰왕 조합법 알려줘", "탱커 챔피언 추천해줘"]
+MAX_TURNS = 30                        # 화면에 남겨 둘 최근 대화 수
+
+if "turns" not in st.session_state:
+    st.session_state.turns = []       # [{"q", "mode", "r", "mg", "mg_note"}]
+turns = st.session_state.turns
 
 
-def set_q(x):
-    st.session_state["q"] = x
+def ask_example(x):
+    st.session_state.pending = x
+
+
+def clear_chat():
+    st.session_state.turns = []
 
 
 def item_html(c, k=None, final=False):
@@ -137,26 +188,44 @@ def item_html(c, k=None, final=False):
             f'<div class="n">{e(str(c["name"]))}</div>{gold}</div>')
 
 
-if not query.strip():
-    st.markdown('<div class="gh-hint">이런 질문을 해볼 수 있어요</div>', unsafe_allow_html=True)
-    with st.container(key="examples", horizontal=True, gap="small"):
-        for i, ex in enumerate(EXAMPLES):
-            st.button(ex, key=f"ex{i}", on_click=set_q, args=(ex,), width="content")
-else:
-    with st.spinner("패치노트에서 근거를 찾는 중..."):
-        r = S.answer(query, mode=mode)
+def source_label(url):
+    """패치노트 URL을 '26.19 패치노트'처럼 읽기 쉬운 이름으로. 모르는 형식이면 도메인."""
+    m = re.search(r"patch-(\d+)-(\d+)-notes", url)
+    return f"{m.group(1)}.{m.group(2)} 패치노트" if m else urlparse(url).netloc.removeprefix("www.")
 
-    with st.container(key="answer"):
-        icon = f'<img src="{e(r["icon"])}" alt="">' if r["icon"] else ""
-        st.markdown(f'<div class="gh-head">{icon}<div class="gh-q">“{e(query)}”에 대한 근거</div></div>',
-                    unsafe_allow_html=True)
+
+def run_query(q, mode):
+    """검색 + (켜져 있으면) MiniGPT 비교 정보까지 계산해 한 턴으로 묶는다."""
+    r = S.answer(q, mode=mode, selector=M.select if M else None)
+    mg = mg_note = None
+    if M and M.applies(r["parsed"], r["hits"]):
+        mg = M.hit_scores(r["parsed"], r["hits"])
+        rule_best = S.rule_select(r["parsed"], r["hits"])
+        same = "같은 줄" if rule_best == r["best"] else f"{rule_best + 1}번 줄"
+        mg_note = f"MiniGPT가 {r['best'] + 1}번 줄을 골랐습니다 (일치 확률 {mg[r['best']]:.2f}). 규칙 기반이었다면: {same}"
+    elif M:
+        mg_note = "이 질문은 MiniGPT 적용 대상이 아니라 규칙 기반으로 골랐습니다 (후보 1개 또는 학습하지 않은 질문 종류)."
+    return {"q": q, "mode": mode, "r": r, "mg": mg, "mg_note": mg_note}
+
+
+def render_question(t):
+    with st.chat_message("user"):
+        note = f'<div class="gh-mode">{e(t["mode"])}</div>' if t["mode"] != "소환사의 협곡" else ""
+        st.markdown(f'<div class="gh-me">{e(t["q"])}{note}</div>', unsafe_allow_html=True)
+
+
+def render_answer(t, i):
+    r = t["r"]
+    with st.container(key=f"answer{i}"):
+        if r["icon"]:
+            st.markdown(f'<div class="gh-head"><img src="{e(r["icon"])}" alt=""></div>', unsafe_allow_html=True)
         st.markdown(r["answer"])
 
         if r.get("item") and r["item"]["components"]:
             comp = r["item"]["components"]
             parts = []
-            for i, c in enumerate(comp):
-                parts += [item_html(c), f'<div class="gh-op">{"+" if i < len(comp) - 1 else "="}</div>']
+            for j, c in enumerate(comp):
+                parts += [item_html(c), f'<div class="gh-op">{"+" if j < len(comp) - 1 else "="}</div>']
             parts.append(item_html(r["item"], final=True))
             st.markdown(f'<div class="gh-sub">조합 재료</div><div class="gh-row">{"".join(parts)}</div>',
                         unsafe_allow_html=True)
@@ -166,10 +235,9 @@ else:
             st.markdown(f'<div class="gh-sub">구매 순서</div><div class="gh-row">{row}</div>', unsafe_allow_html=True)
 
         if r["sources"]:
-            st.markdown("".join(f'<a class="gh-stamp" href="{e(u)}" target="_blank"><b>출처</b>{e(u)}</a>'
-                                for u in r["sources"]), unsafe_allow_html=True)
-
-    st.button("다른 질문 하기", on_click=set_q, args=("",), type="tertiary")
+            # st.markdown은 링크 안의 URL 글자를 다시 자동 링크로 바꿔 도장이 깨지므로 st.html로 그린다
+            st.html("".join(f'<a class="gh-stamp" href="{e(u)}" target="_blank" title="{e(u)}">'
+                            f'<b>출처</b>{e(source_label(u))}</a>' for u in r["sources"]))
 
     if show_debug:
         P = r["parsed"]
@@ -178,14 +246,59 @@ else:
                      "패치": P.patch and S.patch_label(P.patch), "패치 자동(최신 변경)": P.patch_auto,
                      "슬롯": P.slot, "역할군": P.role, "변경 이유 질문": P.why, "키워드": P.keywords,
                      "완화한 조건": r["relaxed"]})
+        if t["mg_note"]:
+            st.caption(t["mg_note"])
+        mg = t["mg"]
         with st.expander(f"검색된 근거 {len(r['hits'])}개"):
             rows = []
-            for i, h in enumerate(r["hits"][:15]):
+            for j, h in enumerate(r["hits"][:15]):
                 m = h["meta"]
-                best = i == r["best"]
+                best = j == r["best"]
                 tags = "".join(f'<span class="gh-tag">{e(str(x))}</span>' for x in (m.get("patch"), m.get("slot")) if x)
                 rows.append(f'<div class="gh-hit{" best" if best else ""}"><div class="m">'
-                            f'<b>{"선택됨 " if best else ""}{i + 1}. {e(str(m.get("type")))}, '
-                            f'{e(str(m.get("champion", m.get("name", ""))))}</b>{tags} 거리 {h["dist"]}</div>'
+                            f'<b>{"선택됨 " if best else ""}{j + 1}. {e(str(m.get("type")))}, '
+                            f'{e(str(m.get("champion", m.get("name", ""))))}</b>{tags} 거리 {h["dist"]}'
+                            f'{f" · MiniGPT {mg[j]:.2f}" if mg else ""}</div>'
                             f'<div class="t">{e(h["text"][:300])}</div></div>')
             st.markdown("".join(rows), unsafe_allow_html=True)
+
+
+# 입력창은 어디서 호출해도 화면 맨 아래에 고정된다. 먼저 읽어서, 첫 질문부터 바로 대화 화면으로 그린다.
+typed = st.chat_input("챔피언, 스킬, 아이템, 패치를 물어보세요")
+q = (typed or st.session_state.pop("pending", None) or "").strip()
+chatting = bool(turns or q)
+
+# ---------- 상단 ----------
+if chatting:
+    with st.container(key="topbar", horizontal=True):
+        st.markdown('<h1 class="gh-title compact">패치노트에 물어보세요</h1>', unsafe_allow_html=True)
+        st.button("새 대화", on_click=clear_chat, type="tertiary", icon=":material/add_comment:")
+else:
+    st.markdown('<h1 class="gh-title">패치노트에<br>물어보세요</h1>'
+                '<p class="gh-lede">챔피언, 스킬, 아이템, 패치 변경점을 물으면 공식 패치노트와 Data Dragon에서 찾은 문장을 '
+                '고쳐 쓰지 않고 그대로, 출처와 함께 보여줍니다.</p>', unsafe_allow_html=True)
+
+mode = st.segmented_control("게임 모드", ["소환사의 협곡", "칼바람", "아레나"], default="소환사의 협곡",
+                            key="mode", label_visibility="collapsed") or "소환사의 협곡"
+
+if not chatting:
+    st.markdown('<div class="gh-hint">이런 질문을 해볼 수 있어요</div>', unsafe_allow_html=True)
+    with st.container(key="examples", horizontal=True, gap="small"):
+        for i, ex in enumerate(EXAMPLES):
+            st.button(ex, key=f"ex{i}", on_click=ask_example, args=(ex,), width="content")
+
+# ---------- 대화 ----------
+for i, t in enumerate(turns):
+    render_question(t)
+    with st.chat_message("assistant"):
+        render_answer(t, i)
+
+if q:
+    t = {"q": q, "mode": mode}
+    render_question(t)
+    with st.chat_message("assistant"):
+        with st.spinner("패치노트에서 근거를 찾는 중..."):
+            t = run_query(q, mode)
+        render_answer(t, len(turns))
+    turns.append(t)
+    del turns[:-MAX_TURNS]

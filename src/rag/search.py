@@ -320,9 +320,10 @@ def _fmt_list(xs):
     return "/".join(f"{x:g}" if isinstance(x, (int, float)) else str(x) for x in xs)
 
 
-def answer(q, mode=None):
+def answer(q, mode=None, selector=None):
+    """selector: fn(P, hits) -> 인덱스. 주면 이번 호출에만 쓴다 (Streamlit 세션끼리 전역 선택기를 공유하지 않도록)"""
     P, hits, relaxed = search(q, mode)
-    best = select_line(P, hits)
+    best = (selector or select_line)(P, hits)
     out = {"parsed": P, "hits": hits, "best": best, "relaxed": relaxed, "sources": [], "icon": None, "item": None, "build": None}
     if best is None:
         out["answer"] = "관련 정보를 찾지 못했습니다."
