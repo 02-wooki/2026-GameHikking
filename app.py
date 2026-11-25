@@ -61,6 +61,23 @@ div[data-testid="stTextInput"] > div { border-radius: 8px; border-width: 1.5px; 
 [class*="st-key-answer"] blockquote { margin: .6rem 0; padding: .7rem 1rem; background: var(--quote);
   border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
 
+/* 답변 평가 줄: 카드 바로 아래 오른쪽, 본문보다 한 단계 조용하게 */
+[class*="st-key-fbrow"] { margin-top: -.35rem; }
+.gh-fb-note { font-size: .8rem; color: var(--muted); }
+[class*="st-key-fbrow"] button { opacity: .7; border-radius: 999px; padding: .25rem; color: var(--muted);
+  transition: opacity .15s, color .15s, background-color .15s, transform .12s cubic-bezier(.3, .7, .4, 1); }
+[class*="st-key-fbrow"] button:hover, [class*="st-key-fbrow"] button:focus-visible { opacity: 1; color: var(--accent); }
+[class*="st-key-fbrow"] button:active { transform: scale(.86); }          /* 누르는 순간 살짝 눌림 */
+/* 선택된 쪽: 메인 컬러로 채운 아이콘 + 옅은 메인 컬러 원, 선택되는 순간 한 번 튀어 오름 */
+[class*="st-key-fbrow"] button[aria-checked="true"] { opacity: 1; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent); }
+[class*="st-key-fbrow"] button[aria-checked="true"] [data-testid="stIconMaterial"] { font-variation-settings: 'FILL' 1; }
+[class*="st-key-fbrow"] button[aria-label="Thumbs up"][aria-checked="true"] { animation: gh-vote-up .42s cubic-bezier(.3, .7, .4, 1); }
+[class*="st-key-fbrow"] button[aria-label="Thumbs down"][aria-checked="true"] { animation: gh-vote-down .42s cubic-bezier(.3, .7, .4, 1); }
+@keyframes gh-vote-up { 0% { transform: scale(.86); } 45% { transform: scale(1.28) rotate(-14deg); } 75% { transform: scale(.96) rotate(3deg); } 100% { transform: none; } }
+@keyframes gh-vote-down { 0% { transform: scale(.86); } 45% { transform: scale(1.28) rotate(14deg); } 75% { transform: scale(.96) rotate(-3deg); } 100% { transform: none; } }
+.gh-fb-note { transition: color .2s; }
+
 /* 출처 도장 */
 .gh-stamp { display: inline-flex; gap: .5rem; align-items: baseline; margin-top: 1rem; padding: .4rem .75rem;
   border: 1.5px dashed var(--accent); border-radius: 6px; font-size: .82rem; color: var(--accent) !important;
@@ -138,8 +155,10 @@ def _mtime(*files):
 @st.cache_resource
 def load_search(ver):
     import importlib
+    import recommend
     import search
     importlib.reload(search)
+    importlib.reload(recommend)       # search.answer()가 함수 안에서 import하므로 같이 새로 읽는다
     search.collection()               # 임베딩 모델·DB를 한 번만 로드
     return search
 
@@ -163,6 +182,11 @@ EXAMPLES = ["상대 다리우스, 나 나서스 탑 템트리 추천해줘", "�
             "마이 궁 뭐야?", "몰왕 조합법 알려줘", "탱커 챔피언 추천해줘"]
 MAX_TURNS = 30                        # 화면에 남겨 둘 최근 대화 수
 
+import query_log as QL                # 질문 로거 (src/rag/query_log.py)
+
+if "log_session" not in st.session_state:
+    import uuid
+    st.session_state.log_session = uuid.uuid4().hex[:8]   # 브라우저 탭마다 새로 만드는 무작위 값 (개인정보 아님)
 if "turns" not in st.session_state:
     st.session_state.turns = []       # [{"q", "mode", "r", "mg", "mg_note"}]
 turns = st.session_state.turns
@@ -190,16 +214,23 @@ def source_label(url):
     return f"{m.group(1)}.{m.group(2)} 패치노트" if m else urlparse(url).netloc.removeprefix("www.")
 
 
-def run_query(q, mode):
-    """검색 + (켜져 있으면) MiniGPT 비교 정보까지 계산해 한 턴으로 묶는다."""
+def run_query(q, mode, source="typed"):
+    """검색 + (켜져 있으면) MiniGPT 비교 정보까지 계산해 한 턴으로 묶고, 질문 로그(logs/queries.jsonl)에 남긴다."""
     r = S.answer(q, mode=mode, selector=M.select if M else None)
-    mg = mg_note = None
+    mg = mg_note = rule_best = None
     if M and M.applies(r["parsed"], r["hits"]):
         mg = M.hit_scores(r["parsed"], r["hits"])
+        rule_best = S.rule_select(r["parsed"], r["hits"])
         mg_note = f"MiniGPT가 {r['best'] + 1}번 줄을 골랐습니다 (일치 확률 {mg[r['best']]:.2f})."
     elif M:
         mg_note = "이 질문은 MiniGPT 적용 대상이 아니라 규칙 기반으로 골랐습니다 (후보 1개 또는 학습하지 않은 질문 종류)."
-    return {"q": q, "mode": mode, "r": r, "mg": mg, "mg_note": mg_note}
+    log_id = QL.record(q, mode, r, session=st.session_state.log_session, turn=len(turns), source=source,
+                       minigpt=bool(M), rule_best=rule_best)
+    return {"q": q, "mode": mode, "r": r, "mg": mg, "mg_note": mg_note, "log_id": log_id}
+
+
+def on_vote(log_id):
+    QL.feedback(log_id, st.session_state.log_session, st.session_state.get(f"fb_{log_id}"))
 
 
 # 스크롤 애니메이터: 한 번만 설치되는 rAF 루프 하나가 스크롤 위치를 전부 맡는다.
@@ -302,6 +333,16 @@ def render_answer(t, i):
             st.html("".join(f'<a class="gh-stamp" href="{e(u)}" target="_blank" title="{e(u)}">'
                             f'<b>출처</b>{e(source_label(u))}</a>' for u in r["sources"]))
 
+    if t.get("log_id"):                    # 👍/👎 -> logs/feedback.jsonl (답변 품질 평가용)
+        # 답변 카드 바로 아래, 오른쪽 정렬. 평가하면 안내 문구가 감사 인사로 바뀐다 (다시 눌러 바꿀 수 있음)
+        fb_key = f"fb_{t['log_id']}"
+        voted = st.session_state.get(fb_key) is not None
+        with st.container(key=f"fbrow{i}", horizontal=True, horizontal_alignment="right",
+                          vertical_alignment="center", gap="small"):
+            st.markdown(f'<span class="gh-fb-note">{"평가해 주셔서 고마워요" if voted else "답변을 평가해 주세요"}</span>',
+                        unsafe_allow_html=True, width="content")
+            st.feedback("thumbs", key=fb_key, on_change=on_vote, args=(t["log_id"],))
+
     if show_debug:
         P = r["parsed"]
         with st.expander("질문을 이렇게 해석했어요"):
@@ -341,7 +382,9 @@ with st.bottom, st.container(key="opts", horizontal=True, gap="medium", vertical
             M = load_minigpt(_mtime(GPT_DIR / "minigpt_selector.py", GPT_DIR / "mini_gpt.py"))
         except Exception as ex:
             st.caption(":orange[MiniGPT를 불러오지 못해 규칙 기반으로 고릅니다]", help=str(ex))
-q = (typed or st.session_state.pop("pending", None) or "").strip()
+pending = st.session_state.pop("pending", None)
+q = (typed or pending or "").strip()
+q_source = "typed" if typed else "example"
 chatting = bool(turns or q)
 
 # ---------- 상단 ----------
@@ -375,7 +418,7 @@ if q:
     scroll_to_question("q", len(turns))
     with st.chat_message("assistant"):
         with st.spinner("패치노트에서 근거를 찾는 중..."):
-            t = run_query(q, mode)
+            t = run_query(q, mode, q_source)
         render_answer(t, len(turns))
     scroll_to_question("a", len(turns))
     turns.append(t)
