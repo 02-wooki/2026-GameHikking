@@ -29,6 +29,8 @@ data/raw/*.txt
 data/processed/
 data/chunks/
 data/sft/
+# 실험 11 선생님 LLM 생성 데이터: 생성 스크립트로 재생성
+data/frame11/
 # 수집된 매치 데이터
 data/raw/riot/
 
