@@ -252,6 +252,8 @@ def follow_frame(rng, prev, champs):
 # ---------------- 2. 틀 -> 프롬프트 ----------------
 def describe(f, meta):
     nm = meta["names"]
+    if meta.get("lines"):                                   # --only-hard: 유형별로 직접 쓴 설명
+        return list(meta["lines"]), list(meta.get("must", []))
     if f["범위"] == "사이트밖":
         return [f"롤 정보 사이트에 잘못 들어온, 롤과 전혀 상관없는 말: 주제 '{meta['topic']}'",
                 "롤·게임·챔피언·패치 얘기는 한 마디도 섞지 말 것"], []
@@ -382,7 +384,7 @@ INTENT_CUE = {
     "이유": r"왜|이유|의도|어째서",
     "능력치": r"능력치|체력|공격력|방어력|마법 ?저항|사거리|이속|이동 ?속도|스탯|마나|공속|공격 ?속도",
     "템트리": r"템|아이템|빌드|코어|뭐 ?사|뭘 ?사|구매|뭐감|뭐 ?가|뭐 ?올",
-    "상대법": r"상대|이기|이겨|카운터|vs|VS|잡|대처|라인전|맞라인|대응|파훼|압도|만나|적|어케 ?해|어떻게 ?해",
+    "상대법": r"상대|이기|이겨|카운터|vs|VS|잡|대처|라인전|맞라인|대응|파훼|압도|만나|적|어케 ?해|어떻게 ?해|팁|운영|요령|잘하|노하우",
     "성능": r"좋|OP|op|승률|쎄|세\?|센가|강하|강해|사기|메타|성능|티어|할만|할 ?만|어때|어떰|구리|구림|쓰레기|쓸만|1티어|떡상|떡락|괜찮|ㄱㅊ|망했|망함|해볼만|버려",
     "아이템": r".",
     "추천": r"추천|할까|뭐 ?하|뭐 ?할|골라|픽|고를|할만한|할 ?만한",
@@ -392,7 +394,7 @@ SKILL_CUE = {"Q": r"(?<![A-Za-z])[Qq](?![A-Za-z])", "W": r"(?<![A-Za-z])[Ww](?![
              "R": r"(?<![A-Za-z])[Rr](?![A-Za-z])|궁", "패시브": r"패시브", "전체": r"스킬"}
 FIELD_CUE = {
     "난이도": {"쉬움": r"초보|처음|쉬운|쉽|입문|뉴비|롤린이|시작"},
-    "개수": {"하나": r"하나|한 ?명|한 ?개|1개|1명|딱", "전체": r"전부|다 |다\?|전체|모든|싹|모두|총정리|풀"},
+    "개수": {"하나": r"하나|한 ?명|한 ?개|1개|1명|딱", "전체": r"전부|다 |다\?|다$|전체|모든|싹|모두|총정리|풀"},
     "시점": {"이력": r"예전|옛날|과거|처음|역사|지금까지|그동안|변천|이력|여태|출시|역대|쭉"},
     "방향": {"상향": r"상향|버프|좋아졌|강해졌|쎄졌|세졌|좋게", "하향": r"하향|너프|나빠졌|약해졌|구려졌|안 ?좋아"},
 }
@@ -409,6 +411,8 @@ def check(q, f, meta, must, maxlen=None):
     if BAD_CHARS.search(q):
         return "한자·일본어"
     if f["범위"] == "사이트밖":
+        if meta.get("allow_lol"):                           # "너 혹시 X임?" — 챗봇에게 묻는 말이라 이름이 있어도 됨
+            return None if all(m in q for m in must) and not re.search(r"템|스킬|패치|라인|빌드|승률", q) else "표기 빠짐·롤 정보"
         return "롤 얘기 섞임" if (find_names(q) or LOL_WORDS.search(q)) else None
     for m in must:
         if m not in q:
@@ -430,6 +434,12 @@ def check(q, f, meta, must, maxlen=None):
             en = meta["names"][next(c["이름"] for c in f["챔피언"] if c["역할"] == "상대")]
             if me in q and en in q and (q.find(me) < q.find(en)) != meta["vs_form"][1]:
                 return "나·상대 순서 바뀜"
+        if meta.get("need") and not re.search(meta["need"], re.sub("|".join(map(re.escape, must)) or "^$", " ", q)):   # 이름 속 글자(쉬바"나") 제외
+            return "정정 꼴 아님"
+        if meta.get("last_me"):                             # 맞라인 서술: 끝에서 템을 묻는 챔피언(나)이 상대보다 뒤에
+            a, e = meta["last_me"]
+            if q.rfind(a) < q.rfind(e):
+                return "끝에 묻는 챔피언이 상대"
         roles = {c["역할"] for c in f["챔피언"]}
         if {"나", "상대"} <= roles and not f.get("이어받음") and not ENEMY_CUE.search(q):
             return "누가 상대인지 안 드러남"
@@ -461,6 +471,214 @@ def check(q, f, meta, must, maxlen=None):
     return None
 
 
+# ---------------- 어려운 유형만 (--only-hard, run4) ----------------
+# 실험 11d의 남은 오류 유형을 겨냥. 실제 사용자 질문(로그·평가 세트)은 쓰지 않고, 사용자가 예로 든 챔피언도 피한다.
+HARD_AVOID = {"가렌", "티모", "케일", "마스터 이", "잭스", "카직스", "르블랑", "케넨", "애니", "이즈리얼", "리븐", "케이틀린",
+              "피즈", "카밀", "피오라", "에코", "자야"}
+HARD_TYPES = ["정정 이어받기", "스킬 패치", "범위 경계", "맞라인 서술", "스킬 목표 템트리", "팁·이력"]
+MECHANICS = ["평타 캔슬(평캔)이 되는지", "애니메이션 캔슬 방법", "스킬 사거리·판정 세부(어디까지 맞는지)",
+             "스킬끼리 동시에 쓰는 조작·버그", "점멸과 스킬 동시 사용 판정"]
+BOT_TOPICS = ["너는 누구야, 사람이야 AI야 (챗봇 자신에게 묻기)", "너 이름 뭐야, 누가 만들었어 (챗봇 자신에게 묻기)"]
+SYMBOLS = ["?", "??", "..", "...", "ㅁ", "ㅇ", "ㄱ", "!", ".", "ㅁㄴㅇㄹ", ";;", "ㅡㅡ", "?!", "ㅎ", "/"]
+ONE_WORD = ["챔피언", "추천", "챔추천", "챔피언 추천", "추천좀", "챔프", "챔 추천", "추천해"]
+STAT_GOALS = ["공속", "방관", "치명타", "쿨감", "체력", "AP"]
+
+
+def _jong(w):
+    """받침 있으면 True (조사 고르기: 베인이야 / 퀸이야 / 럭스야)"""
+    c = w[-1]
+    return "가" <= c <= "힣" and (ord(c) - 0xAC00) % 28 != 0
+
+
+def _ya(w):
+    return w + ("이야" if _jong(w) else "야")
+
+
+def _ranikka(w):
+    return w + ("이라니까" if _jong(w) else "라니까")
+
+
+def _champ(rng, champs, used):
+    c = rng.choice([x for x in champs if x not in used and x not in HARD_AVOID])
+    used.add(c)
+    return c
+
+
+def _prev_row(kind, A=None, E=None, rng=None):
+    """이어받기용 앞 질문 (코드가 쓰는 짧은 틀 문장 + 그 틀). MiniGPT 입력은 앞 '틀'만 쓰므로 문장은 맥락용."""
+    f = dict(EMPTY, 의도=[], 챔피언=[])
+    if kind == "템트리_나":
+        f["의도"], f["챔피언"] = ["템트리"], [{"이름": A, "역할": "나"}]
+        q = rng.choice([f"{A} 템트리", f"{A} 템 뭐감", f"{A} 빌드 알려줘"])
+    elif kind == "상대법_나":
+        f["의도"], f["챔피언"] = ["상대법"], [{"이름": A, "역할": "나"}]
+        q = rng.choice([f"{A} 라인전 어케함", f"{A}로 이기는 법"])
+    elif kind == "개요":
+        f["의도"], f["챔피언"] = ["개요"], [{"이름": A, "역할": "대상"}]
+        q = rng.choice([f"{A} 뭐임", f"{A}", f"{A} 어떤 챔이야"])
+    elif kind == "템트리_상대":
+        f["의도"], f["챔피언"] = ["템트리"], [{"이름": E, "역할": "상대"}]
+        q = rng.choice([f"상대 {E} 템트리", f"{E} 상대 템 뭐감"])
+    elif kind == "상대법_상대":
+        f["의도"], f["챔피언"] = ["상대법"], [{"이름": E, "역할": "상대"}]
+        q = rng.choice([f"{E} 어떻게 이김", f"{E} 상대하는 법"])
+    else:  # 나상대
+        f["의도"] = [rng.choice(["템트리", "상대법"])]
+        f["챔피언"] = [{"이름": A, "역할": "나"}, {"이름": E, "역할": "상대"}]
+        q = rng.choice([f"나 {A} 상대 {E} " + ("템" if f["의도"] == ["템트리"] else "어케 이김"),
+                        f"{E} 상대로 {A} " + ("템트리" if f["의도"] == ["템트리"] else "라인전")])
+    return {"질문": q, "틀": f}
+
+
+def hard_job(rng, champs):
+    """-> dict(f, meta, prev, style, k, fixed, type). fixed = 코드가 직접 쓰는 질문 목록 (LLM 호출 없음)"""
+    t = rng.choice(HARD_TYPES)
+    f = dict(EMPTY, 의도=[], 챔피언=[])
+    meta = {"names": {}, "topic": None, "hard": t}
+    used, prev, fixed, k, extra = set(), None, None, 4, []
+    style = rng.choice(SHORT_STYLES)
+
+    def add(c, role):
+        f["챔피언"].append({"이름": c, "역할": role})
+        meta["names"][c] = surface_champ(rng, c)
+
+    if t == "정정 이어받기":
+        A, E, B = _champ(rng, champs, used), _champ(rng, champs, used), _champ(rng, champs, used)
+        f["이어받음"], k = True, 3
+        style = ("아주 짧은 후속 질문, 12자 이내", 15)
+        if rng.random() < 0.5:                                    # 상대 추가: 앞 챔피언이 '나'가 됨
+            pk = rng.choice(["템트리_나", "상대법_나", "개요"])
+            prev = _prev_row(pk, A=A, rng=rng)
+            f["의도"] = ["템트리"] if pk == "템트리_나" else ["상대법"] if pk == "상대법_나" else [rng.choice(["템트리", "상대법"])]
+            f["챔피언"] = [{"이름": A, "역할": "나"}]
+            add(E, "상대")
+            meta["inherit"] = [A]
+            meta["same_intent"] = pk != "개요"
+            e = meta["names"][E]
+            ask = "" if meta["same_intent"] else (f" 템 뭐감" if f["의도"] == ["템트리"] else f" 어케 이김")
+            meta["lines"] = ["앞 질문에 이어서, 내 상대(맞라인) 챔피언만 새로 알려 주는 아주 짧은 말",
+                             f"꼴 예: '상대는 {e}야{ask}', '{e} 상대면{ask or '?'}', '상대 {e}인데{ask or ' 어케함'}'",
+                             "꼴 예와 거의 같은 모양으로, '상대'라는 말을 꼭 넣을 것. 앞 질문의 챔피언 이름은 다시 쓰지 말 것, 다른 챔피언·라인·스킬도 쓰지 말 것"]
+            meta["must"] = [e]
+            meta["need"] = r"상대|적|맞라인"
+            tail = "" if meta["same_intent"] else ask
+            extra = [f"상대는 {_ya(e)}{tail}", f"상대 {e}{tail}", f"{e} 상대면?" if not tail else f"{e} 상대면{tail}",
+                     f"상대 {e}인데{tail or ' 어떡함'}", f"적 {e}임{tail}", f"맞라인 {e}{tail}", f"상대가 {_ranikka(e)}{tail}"]
+        else:                                                     # 나 정정: 앞 상대는 그대로, 내 챔피언을 고침
+            pk = rng.choice(["템트리_상대", "상대법_상대", "나상대"])
+            prev = _prev_row(pk, A=A, E=E, rng=rng)
+            f["의도"] = list(prev["틀"]["의도"])
+            f["챔피언"] = [x for x in prev["틀"]["챔피언"] if x["역할"] == "상대"]
+            add(B, "나")
+            meta["inherit"] = [E]
+            meta["same_intent"] = True
+            b = meta["names"][B]
+            meta["lines"] = ["앞 질문에 이어서, 내(질문자) 챔피언을 알려 주거나 정정하는 아주 짧은 말",
+                             f"꼴 예: '나는 {b}', '나 {b}라니까', '아니 내가 {b}임', '난 {b}야'",
+                             "꼴 예와 거의 같은 모양으로, '나'·'난'·'내가' 중 하나를 꼭 넣을 것. 앞 질문의 챔피언 이름은 다시 쓰지 말 것, 다른 챔피언·라인·스킬도 쓰지 말 것"]
+            meta["must"] = [b]
+            meta["need"] = r"나|난|내가"
+            extra = [f"나는 {b}", f"나 {_ranikka(b)}", f"아니 내가 {b}임", f"난 {_ya(b)}", f"나 {b}임", f"아니 나 {b}", f"내가 {b}" + ("이라고" if _jong(b) else "라고")]
+        meta["prev_names"] = [c["이름"] for c in prev["틀"]["챔피언"]]
+        meta["prev_surface"] = {n: n for n in meta["prev_names"]}
+    elif t == "스킬 패치":
+        add(_champ(rng, champs, used), "대상")
+        f["의도"], f["스킬"] = ["패치"], rng.choice(["Q", "W", "E", "R", "패시브"])
+        f["방향"], f["시점"] = rng.choice(["상향", "하향"]), "최신"
+        a, s = meta["names"][f["챔피언"][0]["이름"]], {"R": "궁", "패시브": "패시브"}.get(f["스킬"], f["스킬"])
+        w = ["상향", "버프"] if f["방향"] == "상향" else ["너프", "하향"]
+        meta["lines"] = [f"'{a}'의 {f['스킬']} 스킬이 최근 패치에서 {f['방향']}됐는지 묻는 아주 짧은 말",
+                         f"꼴 예: '{a} {s}{w[0]}', '{a} {s} {w[1]}됨?', '{a} {s} {w[0]}먹음'",
+                         f"'{w[0]}' 또는 '{w[1]}'를 꼭 넣을 것('변경'·'변화'는 쓰지 말 것). 미래 표현(언제·다음 패치) 금지, 다른 스킬·챔피언 쓰지 말 것"]
+        meta["must"] = [a]
+        style = ("2~3단어로 아주 짧게", 14)
+    elif t == "범위 경계":
+        sub = rng.choice(["롤 스킬 정보", "데이터밖 조작", "데이터밖 미래", "사이트밖 챗봇", "사이트밖 기호"])
+        meta["sub"] = sub
+        if sub == "롤 스킬 정보":
+            add(_champ(rng, champs, used), "대상")
+            f["의도"], f["스킬"] = ["스킬"], rng.choice(["Q", "W", "E", "R", "패시브"])
+            style = ("이름 + 스킬 + 한 단어로 아주 짧게 (예: 'X R 정보', 'X 패시브 뭐임', 'X q')", 10)
+        elif sub.startswith("데이터밖"):
+            f["범위"] = "데이터밖"
+            add(_champ(rng, champs, used), "대상")
+            meta["topic"] = FUTURE_TOPIC if sub == "데이터밖 미래" else rng.choice(MECHANICS)
+            style = ("짧은 반말 (예: 'X 평캔 되냐', 'X 애니캔 방법', 'X 사거리 판정')", 15)
+        elif sub == "사이트밖 챗봇":
+            f["범위"] = "사이트밖"
+            if rng.random() < 0.5:                       # "너 혹시 X임?" — 챔피언 이름이 있어도 챗봇에게 묻는 말
+                c = _champ(rng, champs, used)
+                meta["names"][c] = surface_champ(rng, c)
+                meta["allow_lol"] = True
+                meta["lines"] = [f"롤 정보 사이트의 챗봇 자신에게 '너 혹시 {meta['names'][c]}냐'고 장난으로 묻는 말 (롤 정보는 안 물음)"]
+                meta["must"] = [meta["names"][c]]
+            else:
+                meta["topic"] = rng.choice(BOT_TOPICS)
+            style = ("아주 짧은 반말 (예: '너 누구야', '너 혹시 사람임?')", 12)
+        else:
+            f["범위"] = "사이트밖"
+            fixed = rng.sample(SYMBOLS, 2)
+    elif t == "맞라인 서술":
+        A, E = _champ(rng, champs, used), _champ(rng, champs, used)
+        f["의도"] = ["템트리"]
+        add(A, "나")
+        add(E, "상대")
+        a, e = meta["names"][A], meta["names"][E]
+        meta["lines"] = [f"상황: 질문자는 '{a}'를 하는데 맞라인(상대)으로 '{e}'가 나왔다",
+                         f"맞라인 상황을 먼저 말하고, 문장 끝에서 '{a}' 템트리(뭐 살지)를 묻는다. '{a}' 이름은 두 번 나와도 된다",
+                         "꼴 예: 'X 맞라인에 Y 나왔는데 X 템 뭐감', 'Y 맞라인 걸렸는데 X 템트리', 'X인데 맞라인 Y임 템 뭐가 좋음'"]
+        meta["must"] = [a, e]
+        meta["last_me"] = (a, e)
+        style = ("짧은 반말, 띄어쓰기 대충", 30)
+    elif t == "스킬 목표 템트리":
+        add(_champ(rng, champs, used), "나")
+        f["의도"] = ["템트리"]
+        a = meta["names"][f["챔피언"][0]["이름"]]
+        if rng.random() < 0.75:
+            f["스킬"] = rng.choice(["Q", "W", "E", "R"])
+            s = {"R": "궁", "Q": "Q", "W": "W", "E": "E"}[f["스킬"]]
+            meta["lines"] = [f"질문자는 '{a}'를 한다", f"{f['스킬']} 스킬(쿨·피해·사거리 등)을 좋게 하는 템·템트리를 묻는다. 다른 스킬은 쓰지 말 것",
+                             f"꼴 예: '{a} {s} 쿨 줄이는 템', '{a} {s} 딜 올리는 템트리', '{a} {s.lower()} 강화템'"]
+        else:
+            g = rng.choice(STAT_GOALS)
+            meta["lines"] = [f"질문자는 '{a}'를 한다", f"'{g}' 위주 템트리를 묻는다. 스킬 이름(QWER·궁·스킬)은 쓰지 말 것",
+                             f"꼴 예: 'X {g} 템트리', 'X {g}템 뭐감'"]
+        meta["must"] = [a]
+        style = ("아주 짧은 반말 (15자 안팎)", 18)
+    else:  # 팁·이력
+        sub = rng.choice(["팁", "이력", "단어 하나"])
+        meta["sub"] = sub
+        if sub == "팁":
+            add(_champ(rng, champs, used), "나")
+            f["의도"] = ["상대법"]
+            a = meta["names"][f["챔피언"][0]["이름"]]
+            meta["lines"] = [f"질문자는 '{a}'를 한다", "그 챔피언을 잘하는 팁·운영 요령을 묻는다 (상대 챔피언 이름 없이)",
+                             "꼴 예: 'X 팁', 'X 후반 운영 꿀팁', 'X 한타 요령', 'X 잘하는법'"]
+            meta["must"] = [a]
+            style = ("아주 짧게 (2~4단어)", 12)
+        elif sub == "이력":
+            add(_champ(rng, champs, used), "대상")
+            f["의도"], f["시점"], f["방향"], f["개수"] = ["패치"], "이력", "변경", "전체"
+            if rng.random() < 0.6:
+                f["스킬"] = rng.choice(["Q", "W", "E", "R", "패시브"])
+            a = meta["names"][f["챔피언"][0]["이름"]]
+            s = {"R": "궁", "패시브": "패시브"}.get(f["스킬"], f["스킬"]) if f["스킬"] else ""
+            meta["lines"] = [f"'{a}'{(' ' + s) if s else ''} 패치 변화를 옛날부터 지금까지 전부 정리해 달라는 말",
+                             "'옛날부터', '역대', '지금까지', '여태' 중 하나와 '다', '전부', '싹' 중 하나, '바뀐'·'패치' 중 하나를 꼭 넣을 것" + (f", 스킬 '{s}'도 꼭 넣을 것" if s else ", 스킬 이름은 쓰지 말 것") + ". 좋아졌는지 나빠졌는지는 말하지 말 것",
+                             f"꼴 예: '{a}{(' ' + s) if s else ''} 옛날부터 바뀐 거 다 정리', '{a} 역대 패치 전부'"]
+            meta["must"] = [a]
+            style = ("짧은 반말", 20)
+        else:
+            f["의도"] = ["추천"]
+            fixed = [rng.choice(ONE_WORD)]
+            if rng.random() < 0.6:                       # 앞 대화가 있어도 이어받지 않음
+                A, E = _champ(rng, champs, used), _champ(rng, champs, used)
+                prev = _prev_row(rng.choice(["템트리_나", "개요", "나상대", "상대법_상대"]), A=A, E=E, rng=rng)
+    # 정정 이어받기는 EXAONE이 꼴을 잘 안 따라서 코드 정형 문장 2개를 섞음
+    return {"f": f, "meta": meta, "prev": prev, "style": style, "k": k, "fixed": fixed, "type": t,
+            "extra": rng.sample(extra, 2) if extra else []}
+
+
 def parse_lines(text):
     out = []
     for ln in text.splitlines():
@@ -468,6 +686,37 @@ def parse_lines(text):
         if ln:
             out.append(ln)
     return out
+
+
+def run_hard(rng, a, i, fo, why):
+    """--only-hard 틀 하나 -> 통과 줄 수. 질문 줄의 '말투' 칸에 'hard:유형'을 적어 둠"""
+    job = hard_job(rng, CHAMPS)
+    f, meta, prev, t = job["f"], job["meta"], job["prev"], job["type"]
+    tag = f"hard:{t}" + (f"/{meta['sub']}" if meta.get("sub") else "")
+    if job["fixed"]:                                     # 기호·단어 하나: 코드가 직접 씀
+        qs, style, must = job["fixed"], ("", None), []
+    else:
+        style = job["style"]
+        prompt, must = build_prompt(f, meta, style, job["k"], prev_q=prev and prev["질문"])
+        try:
+            qs = parse_lines(call(prompt, a.seed * 100000 + i))[:job["k"]]
+        except Exception as e:
+            why["호출 실패"] += 1
+            print("호출 실패", e, flush=True)
+            return 0
+    qs = list(qs) + job["extra"]
+    n = 0
+    for q in qs:
+        bad = None if job["fixed"] else check(q, f, meta, must, style[1])
+        if not bad and f.get("이어받음") and any(nm in S.normalize(q) for nm in meta["prev_names"]):
+            bad = "이어받을 이름을 다시 씀"
+        why[f"{t}: " + (bad or "통과")] += 1
+        if bad and a.show_bad:
+            print(f"  버림 [{t}|{bad}] {q}" + (f"  <- {prev['질문']}" if prev else ""), flush=True)
+        if not bad:
+            fo.write(json.dumps({"이전": prev, "질문": q, "틀": f, "말투": tag}, ensure_ascii=False) + "\n")
+            n += 1
+    return n
 
 
 # ---------------- main ----------------
@@ -479,6 +728,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--follow", type=float, default=0.3, help="이어지는 질문 비율")
     ap.add_argument("--only-vs", action="store_true", help="나+상대 템트리·상대법 틀만 (보충 생성)")
+    ap.add_argument("--only-hard", action="store_true", help="실험 11d 남은 오류 6유형 틀만 (run4)")
+    ap.add_argument("--show-bad", action="store_true", help="--only-hard에서 버린 질문 출력 (시범용)")
     a = ap.parse_args()
     rng = random.Random(a.seed)
     out_dir = ROOT / "data" / "frame11" / "raw"
@@ -487,6 +738,13 @@ def main():
     why, n_ok, t0 = Counter(), 0, time.time()
     with open(out, "a", encoding="utf-8") as fo:
         for i in range(a.frames):
+            if a.only_hard:
+                n_ok += run_hard(rng, a, i, fo, why)
+                fo.flush()
+                if (i + 1) % 25 == 0:
+                    el = time.time() - t0
+                    print(f"{i + 1}/{a.frames} 틀, 통과 질문 {n_ok}, {el / 60:.1f}분", flush=True)
+                continue
             f, meta = sample_frame(rng, CHAMPS, a.only_vs)
             style = pick_style(rng, meta)
             prompt, must = build_prompt(f, meta, style, a.per)
