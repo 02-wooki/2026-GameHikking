@@ -42,7 +42,7 @@ BUILD_WORDS = ("템트리", "빌드", "아이템 추천", "템 추천", "뭐 사
 ITEM_ALIASES = {"몰왕": "몰락한 왕의 검", "가갑": "가시 갑옷", "존야": "존야의 모래시계", "무대": "무한의 대검",
                 "라바돈": "라바돈의 죽음모자", "삼위": "삼위일체", "구인수": "구인수의 격노검", "란두인": "란두인의 예언",
                 "워모그": "워모그의 갑옷", "스태틱": "스태틱의 단검", "드락사르": "드락사르의 황혼검"}
-ALIASES = {"누누": "누누와 윌럼프", "레넥": "레넥톤", "레나타": "레나타 글라스크", "오솔": "아우렐리온 솔", "트페": "트위스티드 페이트",
+ALIASES = {"누누": "누누와 윌럼프", "레넥": "레넥톤", "이즈": "이즈리얼", "레나타": "레나타 글라스크", "오솔": "아우렐리온 솔", "트페": "트위스티드 페이트",
            "문도": "문도 박사", "미포": "미스 포츈", "블츠": "블리츠크랭크", "블리츠": "블리츠크랭크",
            "자르반": "자르반 4세", "리신": "리 신", "마이": "마스터 이", "이렐": "이렐리아", "케틀": "케이틀린",
            "트타": "트리스타나", "카타": "카타리나", "말파": "말파이트", "모데": "모데카이저", "르블": "르블랑",
@@ -68,6 +68,12 @@ CHAMPS = {c["name"]: c for c in _load_jsonl(PROC / "champions.jsonl")}
 NAMES = sorted(CHAMPS, key=len, reverse=True)
 NAMES_NOSPACE = sorted(((n.replace(" ", ""), n) for n in NAMES), key=lambda x: -len(x[0]))
 ALIASES = dict(sorted(((k, v) for k, v in ALIASES.items() if v in CHAMPS), key=lambda x: -len(x[0])))
+# 흔한 낱말 속에 들어 있는 줄임말은 낱말 첫머리일 때만 이름으로 본다 ('사이즈'의 '이즈' -> 이즈리얼 X)
+WORD_START_ALIASES = {"이즈"}
+
+
+def alias_at(text, a, i):
+    return a not in WORD_START_ALIASES or i == 0 or not re.match(r"[가-힣]", text[i - 1])
 EN_NAMES = {c["id"].lower(): c["name"] for c in CHAMPS.values()}            # Aatrox -> 아트록스
 RECORDS = {r["id"]: r for r in _load_jsonl(PROC / "patch_notes.jsonl")}
 ALL_PATCHES = {r["patch"] for r in RECORDS.values()}
@@ -150,7 +156,7 @@ def normalize(q):
     for a, n in ALIASES.items():                              # 긴 줄임말부터
         i = out.find(a)
         while i != -1:
-            if not covered(out, i):
+            if not covered(out, i) and alias_at(out, a, i):
                 out = out[:i] + n + out[i + len(a):]
                 i = out.find(a, i + len(n))
             else:
@@ -168,7 +174,7 @@ def find_champion(q):
         if ns in qs:
             return n
     for a, n in ALIASES.items():
-        if a in q:
+        if any(alias_at(q, a, m.start()) for m in re.finditer(re.escape(a), q)):
             return n
     for w in re.findall(r"[A-Za-z]{3,}", q):
         if w.lower() in EN_NAMES:

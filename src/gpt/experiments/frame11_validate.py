@@ -9,6 +9,7 @@
      (선생님이 쓴 이름을 우리 사전이 못 찾으면 서비스에서도 못 찾으므로 버림)
   4. 이어받음=true인데 이전 틀이 없으면 버림
   5. 실제 질문 평가 세트(logs/eval/exp11_real_gold.jsonl)와 같은 질문은 버림 (평가 오염 방지), 중복 질문 제거
+  6. (11/28~) 나+상대 라벨인데 문장에 나·상대 표시가 하나도 없으면("X vs Y", "X Y 맞라인 템트리") 두 챔피언을 맞대결로 고친다
 출력: data/frame11/train.jsonl, data/frame11/val.jsonl (홀드아웃 챔피언이 나오는 문항 = 처음 보는 이름 일반화 확인용)
 
 실행 (프로젝트 루트):  python3.10 src/gpt/experiments/frame11_validate.py data/frame11/raw/*.jsonl
@@ -37,6 +38,37 @@ FIELDS = ["범위", "의도", "챔피언", "아이템", "스킬", "라인", "역
 
 def norm_q(q):
     return re.sub(r"[\s?!.~]+", "", q).lower()
+
+
+ME_CUE = re.compile(r"(^|\s)(나|난|나는|내가|제가|저는|저|내)\s|(^|\s)(나|난|저)$")
+
+
+def vs_ambiguous(q, me, en, masker):
+    """나+상대 라벨인데 질문에 누가 나·상대인지 표시가 하나도 없으면 True (-> 맞대결로 고침)"""
+    t = masker.S.normalize(q)
+    if me not in t or en not in t:                     # 한쪽이 이전 틀에서 왔으면 문맥으로 분명함
+        return False
+    e, m = re.escape(en), re.escape(me)
+    cues = [ME_CUE.search(t),
+            re.search(r"(상대|적|적군)(이|가|는|은)?\s*(챔프?|챔피언)?\s*" + e, t),      # 상대 E / 적이 E
+            re.search(e + r"\s*(이|가|를|을)?\s*(상대(?!법)|나왔|나오|만나|만났|잡|걸렸|걸리)", t),
+            re.search(e + r"(이?랑|와|과)\s*(맞라인|붙|만나|상대|라인전|대결|싸우|싸울|맞딜)", t),
+            re.search(m + r"\s*(으로|로)\s", t),                                        # M로 E 맞라인
+            t.count(me) >= 2]                                                             # 끝에서 M 템을 다시 물음
+    return not any(cues)
+
+
+def to_vs(r, masker):
+    """나 1 + 상대 1이고 문장이 모호하면 두 챔피언을 맞대결로. 의도에 템트리·상대법이 없으면 상대법+템트리. 바꿨으면 True"""
+    f = r["틀"]
+    me = [c["이름"] for c in f["챔피언"] if c["역할"] == "나"]
+    en = [c["이름"] for c in f["챔피언"] if c["역할"] == "상대"]
+    if len(me) != 1 or len(en) != 1 or len(f["챔피언"]) != 2 or not vs_ambiguous(r["질문"], me[0], en[0], masker):
+        return False
+    f["챔피언"] = [{"이름": c["이름"], "역할": "맞대결"} for c in f["챔피언"]]
+    if not set(f["의도"]) & {"템트리", "상대법"}:
+        f["의도"] = (["상대법", "템트리"] + f["의도"])[:3]
+    return True
 
 
 def check_frame(f, masker):
@@ -69,6 +101,9 @@ def check_frame(f, masker):
             return f"챔피언 항목 {c!r}"
     if len({c["이름"] for c in f["챔피언"]}) != len(f["챔피언"]):
         return "같은 챔피언이 두 번"
+    vs = [c for c in f["챔피언"] if c["역할"] == "맞대결"]
+    if vs and (len(vs) != 2 or len(f["챔피언"]) != 2):
+        return "맞대결은 두 챔피언 모두"
     if f["아이템"] is not None and f["아이템"] not in set(masker.S.ITEM_NAMES):
         return f"모르는 아이템 {f['아이템']!r}"
     return None
@@ -79,7 +114,7 @@ def main(paths):
     masker = Masker()
     gold_q = {norm_q(r["질문"]) for r in FE.load_gold()}
     why, seen, kept = Counter(), set(), []
-    n_in = 0
+    n_in = n_vs = 0
     for p in paths:
         for i, line in enumerate(open(p, encoding="utf-8")):
             if not line.strip():
@@ -102,6 +137,8 @@ def main(paths):
             if bad:
                 why["틀 형식: " + bad.split(" ")[0]] += 1
                 continue
+            if to_vs(r, masker):
+                n_vs += 1
             if r["틀"]["이어받음"] and not prev:
                 why["이어받음인데 이전 없음"] += 1
                 continue
@@ -137,6 +174,7 @@ def main(paths):
 
     print(f"입력 {n_in}줄 -> 통과 {len(kept)} ({len(kept) / max(1, n_in):.0%}) | 학습 {len(train)} / 검증 {len(val)} "
           f"(홀드아웃 챔피언 {len(hold)}명)")
+    print(f"나·상대 표시가 없어 맞대결로 고친 줄 {n_vs} (통과한 줄 중 맞대결 {sum(any(c['역할'] == '맞대결' for c in r['틀']['챔피언']) for r in kept)})")
     if why:
         print("버린 이유:", dict(why.most_common()))
     if kept:
