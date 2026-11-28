@@ -94,11 +94,12 @@ def surface_item(rng, n):
 
 
 # ---------------- 1. 틀 뽑기 ----------------
-def sample_frame(rng, champs):
-    """-> (틀, 말해야 할 것들 meta). meta: 이름 표기, 프롬프트 설명용 정보"""
+def sample_frame(rng, champs, only_vs=False):
+    """-> (틀, 말해야 할 것들 meta). meta: 이름 표기, 프롬프트 설명용 정보
+    only_vs: 나+상대가 둘 다 있는 템트리·상대법 틀만 (보충 생성용)"""
     f = dict(EMPTY, 의도=[], 챔피언=[])
     meta = {"names": {}, "topic": None}
-    r = rng.random()
+    r = 1.0 if only_vs else rng.random()
     if r < 0.15:
         f["범위"] = "사이트밖"
         if rng.random() < 0.4:
@@ -117,7 +118,9 @@ def sample_frame(rng, champs):
             if rng.random() < 0.3:
                 f["스킬"] = rng.choice(["Q", "W", "E", "R"])
         return f, meta
-    if rng.random() < 0.2:
+    if only_vs:
+        intents = rng.choice([["템트리"]] * 5 + [["상대법"]] * 4 + [["상대법", "템트리"], ["템트리", "상대법"]])
+    elif rng.random() < 0.2:
         intents = list(rng.choice(PAIRS))
     else:
         intents = [rng.choices(list(INTENT_W), weights=list(INTENT_W.values()))[0]]
@@ -134,14 +137,14 @@ def sample_frame(rng, champs):
     elif I & {"개요", "성능"} and "템트리" in I:
         champ("나")                                    # "A 어떤 챔이고 템트리는?" — 상대 없이
     elif I & {"템트리", "상대법"}:
-        if "상대법" in I or rng.random() < 0.75:
-            if rng.random() < 0.9:
+        if only_vs or "상대법" in I or rng.random() < 0.75:
+            if only_vs or rng.random() < 0.9:
                 champ("나")
             champ("상대")
         else:
             champ("나")
         roles = [c["역할"] for c in f["챔피언"]]
-        if roles == ["나", "상대"] and rng.random() < 0.7:    # 짧은 나·상대 꼴을 정해 줌 (순서 반반)
+        if roles == ["나", "상대"] and rng.random() < (0.85 if only_vs else 0.7):    # 짧은 나·상대 꼴을 정해 줌 (순서 반반)
             form, me_first = rng.choice(VS_FORMS)
             meta["vs_form"] = (form, me_first)
         if rng.random() < 0.35:
@@ -358,7 +361,7 @@ DIR_WORDS = re.compile(r"상향|하향|버프|너프|좋아졌|나빠졌|약해�
 SKILL_WORDS = re.compile(r"(?<![A-Za-z])[QWERqwer](?![A-Za-z])|궁|패시브|스킬")
 FUTURE = re.compile(r"언제|다음 ?패치|예정|될까|되려나|해줄까|해주나|해줬으면|오려나|앞으로")
 ENEMY_CUE = re.compile(r"상대|적|vs|VS|맞라인|라인전|카운터|만나|잡")
-CLEAN = re.compile(r"^\s*(?:[-*•]|\d+[.)]?(?=\s))\s*")
+CLEAN = re.compile(r"^\s*(?:[-*•]|\d+[.)](?!\d)|\d+(?=\s))\s*")   # "3.질문"처럼 번호 뒤 띄어쓰기 없는 것도
 
 
 NAME_RE = re.compile("|".join(re.escape(n) for n in sorted(S.NAMES, key=len, reverse=True)))
@@ -475,6 +478,7 @@ def main():
     ap.add_argument("--tag", default="pilot")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--follow", type=float, default=0.3, help="이어지는 질문 비율")
+    ap.add_argument("--only-vs", action="store_true", help="나+상대 템트리·상대법 틀만 (보충 생성)")
     a = ap.parse_args()
     rng = random.Random(a.seed)
     out_dir = ROOT / "data" / "frame11" / "raw"
@@ -483,7 +487,7 @@ def main():
     why, n_ok, t0 = Counter(), 0, time.time()
     with open(out, "a", encoding="utf-8") as fo:
         for i in range(a.frames):
-            f, meta = sample_frame(rng, CHAMPS)
+            f, meta = sample_frame(rng, CHAMPS, a.only_vs)
             style = pick_style(rng, meta)
             prompt, must = build_prompt(f, meta, style, a.per)
             try:
