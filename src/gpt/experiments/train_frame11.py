@@ -34,8 +34,14 @@ from lol_tokenizer import load as load_tokenizer
 
 INIT = ROOT / "checkpoints" / "minigpt_pretrain_v4.pt"
 SMOKE = os.environ.get("SMOKE") == "1"
-OUT_CKPT = ROOT / "checkpoints" / ("minigpt_frame11_smoke.pt" if SMOKE else "minigpt_frame11.pt")
-EVAL_JSON = ROOT / "checkpoints" / "frame11_eval.json"
+# 11b: 이전 턴 섞기. 선생님 데이터는 '이전'이 있으면 거의 다 이어받는 질문이라(11 진단), 모델이 '이전이 있으면 이어받기'를 배움.
+#   실제로는 두 번째 질문부터 늘 이전 턴이 있고 대부분 새 질문 -> 독립 질문에 다른 문항을 '이전'으로 붙여(이어받음=false, 틀 그대로) 섞는다.
+AUG_PREV = float(os.environ.get("AUG_PREV", 0.5))
+# 11c: 역할 꼬리. 챔피언 역할을 문장 끝에 다시 적은 자리표시에서 읽는다 (frame_model.encode 설명)
+ROLE_TAIL = os.environ.get("ROLE_TAIL", "1") == "1"
+TAG = os.environ.get("TAG", "frame11c" if ROLE_TAIL else "frame11b" if AUG_PREV > 0 else "frame11")
+OUT_CKPT = ROOT / "checkpoints" / ("minigpt_frame11_smoke.pt" if SMOKE else f"minigpt_{TAG}.pt")
+EVAL_JSON = ROOT / "checkpoints" / f"{TAG}_eval.json"
 DATA = Path(sys.argv[sys.argv.index("--data") + 1]) if "--data" in sys.argv else ROOT / "data" / "frame11" / "train.jsonl"
 BLOCK_SIZE = 192
 D_MODEL, N_LAYER, N_HEAD = 256, 6, 8
@@ -56,11 +62,26 @@ masker = Masker()
 gold = FE.load_gold()
 
 
-def load_rows(path):
+def augment_prev(rows, frac, rng):
+    """독립 질문(이전 없음) 중 frac 비율에 다른 문항을 이전 턴으로 붙인다. 틀은 그대로(이어받음=false)."""
+    pool = [r for r in rows if r["틀"]["범위"] == "롤"] or rows
+    out = []
+    for r in rows:
+        out.append(r)
+        if not r.get("이전") and not r["틀"]["이어받음"] and rng.random() < frac:
+            p = rng.choice(pool)
+            if p is not r:
+                out.append(dict(r, 이전={"질문": p["질문"], "틀": p["틀"]}))
+    return out
+
+
+def load_rows(path, aug=0.0):
     rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+    if aug > 0:
+        rows = augment_prev(rows, aug, random.Random(SEED))
     exs, bad = [], 0
     for r in rows:
-        ex = to_example(masker, tok, r, BLOCK_SIZE)
+        ex = to_example(masker, tok, r, BLOCK_SIZE, ROLE_TAIL)
         if ex is None:
             bad += 1
         else:
@@ -72,8 +93,8 @@ if SMOKE:
     train, bad = load_rows(FE.GOLD)
     print(f"[SMOKE] 코드 점검: 정답 세트 {len(train)}개로 학습하고 같은 세트로 평가 (과적합 확인용, 성능 아님). 버린 줄 {bad}")
 else:
-    train, bad = load_rows(DATA)
-    print(f"학습 {len(train)}개 ({DATA}), 버린 줄 {bad} | 평가: 실제 질문 {len(gold)}개")
+    train, bad = load_rows(DATA, AUG_PREV)
+    print(f"[{TAG}] 학습 {len(train)}개 ({DATA}, 이전 턴 섞기 {AUG_PREV:.0%}), 버린 줄 {bad} | 평가: 실제 질문 {len(gold)}개")
 assert train, "학습 데이터가 없습니다"
 
 model = FrameModel(len(tok), D_MODEL, N_LAYER, N_HEAD, BLOCK_SIZE, DROPOUT).to(device)
@@ -116,7 +137,7 @@ def predict(q, prev_frame):
     table = {}
     prev_txt = masker.prev_text(prev_frame, table)
     qm, table = masker.mask(q, table)
-    ids, pos = encode(tok, prev_txt, qm, BLOCK_SIZE)
+    ids, pos = encode(tok, prev_txt, qm, BLOCK_SIZE, ROLE_TAIL)
     phs = [p for p in pos if p.startswith("[챔피언")]
     ex = {"ids": ids, "roles": [(p, pos[p], 0) for p in phs], "table": table}
     x, last, ph_index = batchify([ex])
@@ -158,13 +179,24 @@ for it in range(1, MAX_ITERS + 1):
         running = 0.0
 
 torch.save({"model": model.state_dict(), "iter": MAX_ITERS, "intents": INTENTS, "heads": HEADS,
-            "config": dict(vocab_size=len(tok), d_model=D_MODEL, n_layer=N_LAYER, n_head=N_HEAD, block_size=BLOCK_SIZE)},
+            "config": dict(vocab_size=len(tok), d_model=D_MODEL, n_layer=N_LAYER, n_head=N_HEAD, block_size=BLOCK_SIZE),
+            "role_tail": ROLE_TAIL, "aug_prev": AUG_PREV},
            OUT_CKPT)
 acc, per_scope, wrong = FE.score(gold, predict)
 print(f"저장 {OUT_CKPT.name} (마지막 회차)")
 for k, v in acc.items():
     print(f"  {k:10} {v:6.1%}   (규칙 {rule_acc[k]:6.1%})")
 print("  범위별:", {f"{g}{'✓' if o else '✗'}": n for (g, o), n in sorted(per_scope.items())})
+print("\n  실제 질문에서 틀린 문항:")
+for q, g, p in wrong:
+    print(f"    {q}\n      정답 {FE.brief(g)}\n      모델 {FE.brief(p)}")
+val_acc = None
+VAL = DATA.parent / "val.jsonl"
+if not SMOKE and VAL.exists():                      # 선생님 데이터 중 처음 보는 챔피언 문항 (같은 말투 분포)
+    val_rows = [json.loads(l) for l in open(VAL, encoding="utf-8") if l.strip()]
+    val_acc, _, _ = FE.score(val_rows, predict)
+    print(f"\n  생성 검증 세트 {len(val_rows)}개 (처음 보는 챔피언): " +
+          " ".join(f"{k} {val_acc[k]:.1%}" for k in ["답 가능 해석", "범위", "첫 의도", "챔피언·역할", "틀 전체"]))
 if not SMOKE:
-    EVAL_JSON.write_text(json.dumps({"model": acc, "rule": rule_acc, "n_train": len(train), "iters": MAX_ITERS},
-                                    ensure_ascii=False, indent=1), encoding="utf-8")
+    EVAL_JSON.write_text(json.dumps({"model": acc, "rule": rule_acc, "synthetic_val": val_acc, "n_train": len(train),
+                                     "iters": MAX_ITERS}, ensure_ascii=False, indent=1), encoding="utf-8")

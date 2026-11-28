@@ -97,29 +97,46 @@ class Masker:
 PH_RE = re.compile(r"\[(챔피언|아이템|패치)\d+\]")
 
 
-def encode(tok, prev_txt, q_masked, block):
-    """-> (토큰 ids, {자리표시: 그 자리표시 끝 토큰 위치(질문 쪽 마지막 등장)})"""
-    head = tok.encode(f"<|system|>질문 해석<|end|><|user|>이전: {prev_txt} | 질문: ", add_special_tokens=False)
-    ids, pos = list(head), {}
-    # 이전 쪽 자리표시도 위치를 기록 (질문에 다시 안 나오는 '이어받은' 챔피언용)
-    for m in PH_RE.finditer(prev_txt):
-        pre = tok.encode(f"<|system|>질문 해석<|end|><|user|>이전: {prev_txt[:m.end()]}", add_special_tokens=False)
-        pos[m[0]] = len(pre) - 1
-    i = 0
+def encode(tok, prev_txt, q_masked, block, role_tail=True):
+    """-> (토큰 ids, {챔피언 자리표시: 역할을 읽을 토큰 위치})
+    role_tail=True (11c~): 입력 끝에 ' | 역할: [챔피언1] [챔피언2]'를 덧붙이고 그 위치에서 역할을 읽는다.
+      MiniGPT는 왼쪽→오른쪽으로만 보므로, 문장 중간의 자리표시 위치에서는 뒤에 오는 말('…맞라인으로', '나 [챔피언2]')을
+      볼 수 없다. 끝에 다시 적으면 문장 전체를 본 뒤에 역할을 판단한다.
+    role_tail=False (11, 11b): 자리표시가 마지막으로 나온 위치(질문 쪽, 없으면 이전 틀 쪽)에서 읽는다."""
+    pre_txt = "<|system|>질문 해석<|end|><|user|>이전: "
+    head = tok.encode(f"{pre_txt}{prev_txt} | 질문: ", add_special_tokens=False)
+    pos = {}
+    for m in PH_RE.finditer(prev_txt):            # 이전 쪽 자리표시 ('이어받은' 챔피언용)
+        pos[m[0]] = len(tok.encode(f"{pre_txt}{prev_txt[:m.end()]}", add_special_tokens=False)) - 1
+    q_ids, q_pos, i = [], {}, 0
     for m in PH_RE.finditer(q_masked):
         if m.start() > i:
-            ids += tok.encode(q_masked[i:m.start()], add_special_tokens=False)
-        ids += tok.encode(m[0], add_special_tokens=False)
-        pos[m[0]] = len(ids) - 1
+            q_ids += tok.encode(q_masked[i:m.start()], add_special_tokens=False)
+        q_ids += tok.encode(m[0], add_special_tokens=False)
+        q_pos[m[0]] = len(q_ids) - 1
         i = m.end()
     if i < len(q_masked):
-        ids += tok.encode(q_masked[i:], add_special_tokens=False)
-    ids += tok.encode("<|end|><|assistant|>", add_special_tokens=False)
-    if len(ids) > block:                          # 너무 길면 앞(이전 틀 쪽)을 자르지 않고 질문 끝을 자른다
-        tail = tok.encode("<|end|><|assistant|>", add_special_tokens=False)
-        ids = ids[:block - len(tail)] + tail
-        pos = {k: v for k, v in pos.items() if v < block - len(tail)}
-    return ids, pos
+        q_ids += tok.encode(q_masked[i:], add_special_tokens=False)
+    end = tok.encode("<|end|><|assistant|>", add_special_tokens=False)
+    champs = sorted({p for p in list(pos) + list(q_pos) if p.startswith("[챔피언")},
+                    key=lambda p: int(re.sub(r"\D", "", p)))
+    tail, t_pos = [], {}
+    if role_tail and champs:
+        tail = tok.encode(" | 역할:", add_special_tokens=False)
+        for p in champs:
+            tail += tok.encode(" " + p, add_special_tokens=False)
+            t_pos[p] = len(tail) - 1
+    room = block - len(head) - len(tail) - len(end)
+    if len(q_ids) > room:                         # 너무 길면 질문 끝을 자른다 (역할 꼬리·끝 표시는 유지)
+        q_ids = q_ids[:max(0, room)]
+        q_pos = {k: v for k, v in q_pos.items() if v < len(q_ids)}
+    ids = head + q_ids + tail + end
+    if role_tail:
+        pos = {p: len(head) + len(q_ids) + v for p, v in t_pos.items()}
+    else:
+        pos.update({k: len(head) + v for k, v in q_pos.items()})
+    pos = {k: v for k, v in pos.items() if v < len(ids)}
+    return ids[:block], pos
 
 
 # ---------------- 모델: MiniGPT 몸통 + 분류 머리 ----------------
@@ -157,13 +174,13 @@ class FrameModel(nn.Module):
 
 
 # ---------------- 학습 예시 만들기 / 틀 되돌리기 ----------------
-def to_example(masker, tok, row, block):
+def to_example(masker, tok, row, block, role_tail=True):
     """{'이전': {'틀'} | None, '질문', '틀'} -> 모델 입력·정답. 틀의 챔피언이 자리표시로 안 잡히면 None (자동 검증)"""
     table = {}
     prev = row.get("이전")
     prev_txt = masker.prev_text(prev and prev.get("틀"), table)
     qm, table = masker.mask(row["질문"], table)
-    ids, pos = encode(tok, prev_txt, qm, block)
+    ids, pos = encode(tok, prev_txt, qm, block, role_tail)
     f = row["틀"]
     name_of = {v: k[1] for k, v in table.items() if k[0] == "챔피언"}
     gold_role = {c["이름"]: c["역할"] for c in f.get("챔피언") or []}
