@@ -76,8 +76,23 @@ DATAOUT = ["두 스킬을 동시에 쓰는 콤보·상호작용 가능 여부(�
            "랭크 티어 올리는 일반 팁", "챔피언 출시일·역사"]
 
 # 나+상대 짧은 꼴: (틀, 나 먼저?) — 나 먼저 / 상대 먼저 반반
-VS_FORMS = [("나 {M} 상대 {E}", True), ("{M} vs {E}", True), ("내가 {M}고 적이 {E}", True), ("{M}로 {E} 맞라인", True),
-            ("상대 {E}, 나 {M}", False), ("{E} 상대로 {M}", False), ("적이 {E}인데 나 {M}", False), ("{E} 맞라인 {M}", False)]
+# (run5부터 "{M} vs {E}", "{E} 맞라인 {M}"은 누가 나인지 표시가 없는 '맞대결' 꼴이라 여기서 빼고 DUEL_FORMS로 옮김)
+VS_FORMS = [("나 {M} 상대 {E}", True), ("내가 {M}고 적이 {E}", True), ("{M}로 {E} 맞라인", True),
+            ("상대 {E}, 나 {M}", False), ("{E} 상대로 {M}", False), ("적이 {E}인데 나 {M}", False)]
+def format_vs(form, M, E):
+    """VS_FORMS 채우기 + 받침에 맞는 조사 (자르반 4세로 / 자르반으로, 키아나고 / 쉔이고)"""
+    jong = lambda w: "가" <= w[-1] <= "힣" and (ord(w[-1]) - 0xAC00) % 28 != 0
+    ro = lambda w: w + ("으로" if jong(w) and (ord(w[-1]) - 0xAC00) % 28 != 8 else "로")
+    return (form.replace("{M}로", ro(M)).replace("{M}고", M + ("이고" if jong(M) else "고"))
+            .format(M=M, E=E))
+
+
+# 맞대결 꼴 (두 챔피언 모두 역할=맞대결, 나·상대 표시 없음). 의도: None = 안 적음 -> [상대법, 템트리]
+DUEL_FORMS = {
+    None: ["{A} vs {B}", "{A}vs{B}", "{A} 대 {B}", "{A} {B} 맞라인", "{A} {L} vs {B}", "{A} vs {B} {L}"],
+    "템트리": ["{A} vs {B} 템트리", "{A} {B} 템트리", "{A}vs{B} 템", "{A} 대 {B} 빌드", "{A} {B} 맞라인 템", "{A} {L} vs {B} 템"],
+    "상대법": ["{A}랑 {B} 누가 셈", "{A} {B} 상성", "{A} {B} 라인전", "{A} vs {B} 누가 이김", "{A} 대 {B} 상성", "{A} {B} {L} 라인전"],
+}
 INTENT_W = {"개요": 7, "스킬": 11, "패치": 16, "이유": 7, "능력치": 6, "템트리": 20, "상대법": 16, "성능": 10,
             "아이템": 7, "추천": 10, "안내": 4}
 PAIRS = [("성능", "패치"), ("상대법", "템트리"), ("패치", "이유"), ("스킬", "패치"), ("개요", "템트리"),
@@ -282,7 +297,7 @@ def describe(f, meta):
     if n("대상"):
         lines.append(f"물어보는 챔피언은 {n('대상')}")
     if meta.get("vs_form"):
-        form = meta["vs_form"][0].format(M=nm[who["나"]], E=nm[who["상대"]])
+        form = format_vs(meta["vs_form"][0], nm[who["나"]], nm[who["상대"]])
         lines.append(f"나와 상대는 '{form}' 꼴로 짧게 쓴다 (두 이름의 순서를 바꾸지 말 것)")
     D = {"개요": "그 챔피언이 어떤 챔피언인지 (소개·컨셉)",
          "스킬": "스킬 설명",
@@ -383,8 +398,8 @@ INTENT_CUE = {
     "패치": r"패치|바뀌|바꼈|바뀠|바뀐|변경|변했|변화|달라|상향|하향|버프|너프|업데이트|조정|수정",
     "이유": r"왜|이유|의도|어째서",
     "능력치": r"능력치|체력|공격력|방어력|마법 ?저항|사거리|이속|이동 ?속도|스탯|마나|공속|공격 ?속도",
-    "템트리": r"템|아이템|빌드|코어|뭐 ?사|뭘 ?사|구매|뭐감|뭐 ?가|뭐 ?올",
-    "상대법": r"상대|이기|이겨|카운터|vs|VS|잡|대처|라인전|맞라인|대응|파훼|압도|만나|적|어케 ?해|어떻게 ?해|팁|운영|요령|잘하|노하우",
+    "템트리": r"템|아이템|빌드|코어|뭐 ?사|뭘 ?사|구매|뭐감|뭐 ?가|뭐 ?올|뭐 ?먼저 ?사|먼저 ?사",
+    "상대법": r"상대|이기|이겨|카운터|vs|VS|잡|대처|라인전|맞라인|대응|파훼|압도|만나|적|어케 ?해|어떻게 ?해|팁|운영|요령|잘하|노하우|상성|이김|이길|승자|유리|우위|앞서|누가 ?(셈|세|쎔|강)",
     "성능": r"좋|OP|op|승률|쎄|세\?|센가|강하|강해|사기|메타|성능|티어|할만|할 ?만|어때|어떰|구리|구림|쓰레기|쓸만|1티어|떡상|떡락|괜찮|ㄱㅊ|망했|망함|해볼만|버려",
     "아이템": r".",
     "추천": r"추천|할까|뭐 ?하|뭐 ?할|골라|픽|고를|할만한|할 ?만한",
@@ -719,6 +734,107 @@ def run_hard(rng, a, i, fo, why):
     return n
 
 
+# ---------------- 맞대결 (run5) ----------------
+# 나·상대 표시 찾기: frame11_validate.vs_ambiguous와 같은 규칙 (윈도우엔 torch가 없어 그 파일을 못 불러와서 옮겨 씀 — 바꾸면 둘 다)
+ME_CUE = re.compile(r"(^|\s)(나|난|나는|내가|제가|저는|저|내)\s|(^|\s)(나|난|저)$")
+DUEL_AVOID = {"아이번", "유미"}           # 평가 세트에 있는 조합 — 예시·생성에서 뺌
+
+
+def has_mark(q, a, b):
+    """질문에 누가 나·상대인지 표시가 하나라도 있으면 True (a·b는 정식 이름, 어느 쪽이 나든 상관없이 봄)"""
+    t = S.normalize(q)
+    if a not in t or b not in t:
+        return True                                   # 한쪽 이름이 없으면 맞대결 문장이 아님
+    for me, en in ((a, b), (b, a)):
+        e, m = re.escape(en), re.escape(me)
+        if any([ME_CUE.search(t),
+                re.search(r"(상대|적|적군)(이|가|는|은)?\s*(챔프?|챔피언)?\s*" + e, t),
+                re.search(e + r"\s*(이|가|를|을)?\s*(상대(?!법)|나왔|나오|만나|만났|잡|걸렸|걸리)", t),
+                re.search(e + r"(이?랑|와|과)\s*(맞라인|붙|만나|상대|라인전|대결|싸우|싸울|맞딜)", t),
+                re.search(m + r"\s*(으로|로)\s", t),
+                t.count(me) >= 2]):
+            return True
+    return False
+
+
+def _duel_champs(rng, champs):
+    pool = [x for x in champs if x not in DUEL_AVOID and x not in HARD_AVOID]
+    return rng.sample(pool, 2)
+
+
+def duel_frame(rng, A, B, intent, lane):
+    f = dict(EMPTY, 의도=["상대법", "템트리"] if intent is None else [intent],
+             챔피언=[{"이름": A, "역할": "맞대결"}, {"이름": B, "역할": "맞대결"}])
+    f["라인"] = lane
+    return f
+
+
+def write_duel(rng, a, i, fo, why, pair):
+    """맞대결 틀 하나 (pair=True면 같은 두 챔피언의 나·상대 표시 문장도 같이) -> 통과 줄 수"""
+    A, B = _duel_champs(rng, CHAMPS)
+    intent = rng.choice([None, "템트리", "상대법"])
+    forms = DUEL_FORMS[intent]
+    form = rng.choice(forms)
+    lane = rng.choice(LANES) if "{L}" in form else None
+    sa, sb = surface_champ(rng, A), surface_champ(rng, B)
+    f = duel_frame(rng, A, B, intent, lane)
+    ex = [x.format(A=sa, B=sb, L=lane or "") .replace("  ", " ").strip() for x in rng.sample(forms, 3)
+          if ("{L}" in x) == bool(lane)][:2] or [form.format(A=sa, B=sb, L=lane or "")]
+    ask = {None: "무엇을 물을지 적지 않고 두 챔피언 이름만 맞붙여 씀",
+           "템트리": "두 챔피언이 붙을 때 템트리(뭐 살지)를 물음", "상대법": "두 챔피언 중 누가 이기는지·상성·라인전을 물음"}[intent]
+    lines = [f"두 챔피언 '{sa}'와 '{sb}'의 맞대결에 대한 아주 짧은 말 (누가 내 챔피언이고 누가 상대인지는 밝히지 않음)",
+             ask, "꼴 예: " + ", ".join(f"'{x}'" for x in ex),
+             "'나', '내가', '상대', '적', '~로', '~랑 맞라인', '~나왔는데' 같은 말은 쓰지 말 것. 같은 이름을 두 번 쓰지 말 것"]
+    if lane:
+        lines.append(f"라인 '{lane}'를 꼭 넣을 것")
+    else:
+        lines.append("라인 이름은 쓰지 말 것")
+    meta = {"names": {A: sa, B: sb}, "topic": None, "lines": lines, "must": [sa, sb], "duel": True,
+            "same_intent": intent is None}             # 의도를 안 적은 꼴은 의도 단서어 검사 생략
+    jobs = [(f, meta, None)]
+    if pair:                                          # 대조: 같은 두 챔피언, 같은 의도, 나·상대 표시 있음
+        me_first = rng.random() < 0.5
+        M, E = (A, B) if rng.random() < 0.5 else (B, A)
+        sm, se = meta["names"][M], meta["names"][E]
+        vform = rng.choice([x for x, mf in VS_FORMS if mf == me_first])
+        f2 = dict(f, 챔피언=[{"이름": M, "역할": "나"}, {"이름": E, "역할": "상대"}])
+        tail = {None: "", "템트리": " 템트리", "상대법": " 어케 이김"}[intent]
+        ex2 = format_vs(vform, sm, se) + (f" {lane}" if lane else "") + tail
+        vform_b = rng.choice([x for x, mf in VS_FORMS if mf == me_first and x != vform])   # 코드 문장 2개 (같은 순서, 다른 꼴)
+        ex2b = format_vs(vform_b, sm, se) + (f" {lane}" if lane else "") + tail
+        lines2 = [f"질문자는 '{sm}'를 하고 상대(맞라인)는 '{se}'", ask.replace("두 챔피언 이름만 맞붙여 씀", "나와 상대만 밝힘"),
+                  f"꼴 예: '{ex2}' — 누가 나이고 누가 상대인지 꼭 드러낼 것 ('나', '내가', '상대', '적', '~상대로' 등)",
+                  (f"라인 '{lane}'를 꼭 넣을 것" if lane else "라인 이름은 쓰지 말 것")]
+        meta2 = {"names": {M: sm, E: se}, "topic": None, "lines": lines2, "must": [sm, se],
+                 "vs_form": (vform, me_first), "same_intent": intent is None, "pair_of": True}
+        jobs.append((f2, meta2, [ex2, ex2b]))
+    n = 0
+    for j, (fj, mj, code_q) in enumerate(jobs):
+        style = ("아주 짧게 (15자 안팎)", 15)
+        prompt, must = build_prompt(fj, mj, style, 3)
+        try:
+            qs = parse_lines(call(prompt, a.seed * 100000 + i * 2 + j))[:3]
+        except Exception as e:
+            why["호출 실패"] += 1
+            print("호출 실패", e, flush=True)
+            continue
+        qs += code_q or [rng.choice(ex)]                # 코드가 꼴 그대로 쓴 문장 (맞대결 1개, 대조 2개)
+        kind = "대조" if mj.get("pair_of") else "맞대결"
+        for q in qs:
+            bad = check(q, fj, mj, must, style[1])
+            if not bad and mj.get("duel") and has_mark(q, A, B):
+                bad = "나·상대 표시 있음"
+            if not bad and mj.get("pair_of") and not has_mark(q, A, B):
+                bad = "나·상대 표시 없음 (맞대결로 바뀜)"
+            why[f"{kind}: " + (bad or "통과")] += 1
+            if bad and a.show_bad:
+                print(f"  버림 [{kind}|{bad}] {q}", flush=True)
+            if not bad:
+                fo.write(json.dumps({"이전": None, "질문": q, "틀": fj, "말투": f"vs:{kind}"}, ensure_ascii=False) + "\n")
+                n += 1
+    return n
+
+
 # ---------------- main ----------------
 def main():
     ap = argparse.ArgumentParser()
@@ -730,12 +846,25 @@ def main():
     ap.add_argument("--only-vs", action="store_true", help="나+상대 템트리·상대법 틀만 (보충 생성)")
     ap.add_argument("--only-hard", action="store_true", help="실험 11d 남은 오류 6유형 틀만 (run4)")
     ap.add_argument("--show-bad", action="store_true", help="--only-hard에서 버린 질문 출력 (시범용)")
+    ap.add_argument("--duel-frames", type=int, default=0, help="--only-vs: 맞대결 틀 수 (run5)")
+    ap.add_argument("--pair-frames", type=int, default=0, help="--only-vs: 맞대결 + 같은 두 챔피언 나·상대 대조 짝 틀 수 (run5)")
     a = ap.parse_args()
     rng = random.Random(a.seed)
     out_dir = ROOT / "data" / "frame11" / "raw"
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"exaone_{a.tag}.jsonl"
     why, n_ok, t0 = Counter(), 0, time.time()
+    if a.only_vs and (a.duel_frames or a.pair_frames):      # run5: 맞대결 + 대조 짝
+        total = a.duel_frames + a.pair_frames
+        with open(out, "a", encoding="utf-8") as fo:
+            for i in range(total):
+                n_ok += write_duel(rng, a, i, fo, why, pair=i >= a.duel_frames)
+                fo.flush()
+                if (i + 1) % 25 == 0:
+                    print(f"{i + 1}/{total} 틀, 통과 질문 {n_ok}, {(time.time() - t0) / 60:.1f}분", flush=True)
+        print(f"완료: {out} 통과 {n_ok}줄, {(time.time() - t0) / 60:.1f}분")
+        print("결과:", dict(why.most_common()))
+        return
     with open(out, "a", encoding="utf-8") as fo:
         for i in range(a.frames):
             if a.only_hard:
